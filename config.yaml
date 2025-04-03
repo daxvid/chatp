@@ -1,0 +1,17 @@
+sip:
+  account: "169532"
+  server: "159.138.145.85:62060
+  username: "169532"
+  password: "wangchuan123"
+  port: 62060
+
+call:
+  initial_message: "initial_message.wav"
+  response_timeout: 5  # seconds
+  target_number: "sip:13344445555@159.138.145.85:62060"
+
+responses:
+  greeting: "您好，我是AI助手，很高兴为您服务。"
+  interested: "感谢您的兴趣，我们的产品具有以下特点..."
+  not_interested: "感谢您的时间，祝您生活愉快。"
+  default: "抱歉，我没有听清楚，请您再说一遍。" 

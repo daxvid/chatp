@@ -17,10 +17,13 @@ class VoIPCaller:
         with open(config_path, 'r', encoding='utf-8') as f:
             self.config = yaml.safe_load(f)
         
+        # 构建完整的服务器地址
+        server_with_port = f"{self.config['sip']['server']}:{self.config['sip']['port']}"
+        
         # 初始化SIP客户端
         self.phone = VoIPPhone(
-            server=self.config['sip']['server'],
-            port=self.config['sip']['port'],
+            server=server_with_port,  # 使用完整的服务器地址和端口
+            port=self.config['sip']['port'],  # 保持端口设置
             username=self.config['sip']['username'],
             password=self.config['sip']['password'],
             callCallback=self.on_call,
@@ -82,11 +85,9 @@ class VoIPCaller:
                 logger.warning("已有通话在进行中")
                 return False
             
-            # 构建正确的SIP URI格式
-            sip_uri = f"sip:{number}@{self.config['sip']['server']}:{self.config['sip']['port']}"
-            logger.info(f"正在拨打: {sip_uri}")
-            
-            self.current_call = self.phone.call(sip_uri)
+            # 直接使用号码，让pyVoIP处理格式
+            logger.info(f"正在拨打: {number}")
+            self.current_call = self.phone.call(number)
             
             if self.current_call:
                 logger.info("呼叫已建立")

@@ -23,7 +23,6 @@ class VoIPCaller:
             port=self.config['sip']['port'],
             username=self.config['sip']['username'],
             password=self.config['sip']['password'],
-            #sipPort=62060,
             callCallback=self.on_call,
             myIP="0.0.0.0"
         )
@@ -83,8 +82,11 @@ class VoIPCaller:
                 logger.warning("已有通话在进行中")
                 return False
             
-            logger.info(f"正在拨打: {number}")
-            self.current_call = self.phone.call(number)
+            # 构建正确的SIP URI格式
+            sip_uri = f"sip:{number}@{self.config['sip']['server']}:{self.config['sip']['port']}"
+            logger.info(f"正在拨打: {sip_uri}")
+            
+            self.current_call = self.phone.call(sip_uri)
             
             if self.current_call:
                 logger.info("呼叫已建立")

@@ -1,4 +1,6 @@
 from pyVoIP.VoIP import VoIPPhone, VoIPCall
+from pyVoIP.credentials import CredentialsManager
+from pyVoIP.VoIP.phone import VoIPPhoneParamter
 import time
 import yaml
 import logging
@@ -11,28 +13,39 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+class Call(VoIPCall):
+    def ringing(self, invite_request):
+        try:
+            self.answer()
+            self.hangup()
+        except Exception as e:
+            logger.error(f"处理来电失败: {e}")
+
 class VoIPCaller:
     def __init__(self, config_path="config.yaml"):
         # 加载配置
         with open(config_path, 'r', encoding='utf-8') as f:
             self.config = yaml.safe_load(f)
         
-        # 初始化SIP客户端
-        self.phone = VoIPPhone(
-            server=self.config['sip']['server'],
-            port=self.config['sip']['port'],
-            username=self.config['sip']['username'],
-            password=self.config['sip']['password'],
-            callCallback=self.on_call,
-            myIP="0.0.0.0",
-            proxy=self.config['sip']['server'] + ":" + str(self.config['sip']['port'])  # 添加代理服务器
+        # 初始化凭证管理器
+        self.cm = CredentialsManager()
+        self.cm.add(
+            self.config['sip']['username'],
+            self.config['sip']['password']
         )
         
-        # 设置注册刷新时间
-        #self.phone.setRegisterRefresh(self.config['sip']['register_refresh'])
+        # 初始化SIP客户端参数
+        self.params = VoIPPhoneParamter(
+            self.config['sip']['server'],
+            self.config['sip']['port'],
+            self.config['sip']['username'],
+            self.cm,
+            bind_ip="0.0.0.0",
+            call_class=Call
+        )
         
-        # 设置保活时间
-        #self.phone.setKeepAlive(self.config['sip']['keep_alive'])
+        # 初始化SIP客户端
+        self.phone = VoIPPhone(self.params)
         
         # 当前通话
         self.current_call = None
@@ -86,12 +99,11 @@ class VoIPCaller:
                 logger.warning("已有通话在进行中")
                 return False
             
-            logger.info(f"正在拨打: {number}")
+            # 构建完整的SIP URI格式
+            sip_uri = number #f"sip:{number}@{self.config['sip']['server']}:{self.config['sip']['port']}"
+            logger.info(f"正在拨打: {sip_uri}")
             
-            # 设置代理认证信息
-            self.phone.setProxyAuth(self.config['sip']['username'], self.config['sip']['password'])
-            
-            self.current_call = self.phone.call(number)
+            self.current_call = self.phone.call(sip_uri)
             
             if self.current_call:
                 logger.info("呼叫已建立")

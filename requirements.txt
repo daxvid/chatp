@@ -5,4 +5,4 @@ edge-tts==6.1.9
 numpy==1.24.3
 python-dotenv==1.0.0
 pyyaml==6.0.1
-pyVoIP==1.6.9 
+pyVoIP==2.0.0a4

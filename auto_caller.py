@@ -149,7 +149,14 @@ def main():
     # Initialize PJSIP
     ep = pj.Endpoint()
     ep.libCreate()
-    ep.libInit(pj.EpConfig())
+    
+    # Configure endpoint
+    ep_cfg = pj.EpConfig()
+    ep_cfg.uaConfig.maxCalls = 4
+    ep_cfg.uaConfig.userAgent = "Python Auto Caller"
+    ep_cfg.uaConfig.stunServer = []
+    ep_cfg.uaConfig.nameserver = []
+    ep.libInit(ep_cfg)
     
     # Create SIP transport
     sipTpConfig = pj.TransportConfig()
@@ -163,6 +170,14 @@ def main():
     acc_cfg = pj.AccountConfig()
     acc_cfg.idUri = f"sip:{config.sip_config['account']}"
     acc_cfg.regConfig.registrarUri = f"sip:{config.sip_config['server']}"
+    acc_cfg.regConfig.registerOnAdd = True
+    acc_cfg.regConfig.timeoutSec = config.sip_config['register_refresh']
+    acc_cfg.regConfig.retryIntervalSec = 60
+    acc_cfg.regConfig.firstRetryIntervalSec = 20
+    acc_cfg.regConfig.delayBeforeRefreshSec = 5
+    acc_cfg.regConfig.dropCallsOnFail = False
+    acc_cfg.regConfig.unregWaitMsec = 5000
+    acc_cfg.regConfig.proxyUse = pj.PJSIP_REGISTER_INIT_PROXY
     acc_cfg.sipConfig.authCreds.append(
         pj.AuthCredInfo("digest", "*", config.sip_config['username'], 0, config.sip_config['password'])
     )

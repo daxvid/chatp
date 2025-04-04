@@ -23,9 +23,9 @@ class VoIPCaller:
             port=self.config['sip']['port'],
             username=self.config['sip']['username'],
             password=self.config['sip']['password'],
-            #sipPort=62060,
             callCallback=self.on_call,
-            myIP="0.0.0.0"
+            myIP="0.0.0.0",
+            proxy=self.config['sip']['server'] + ":" + str(self.config['sip']['port'])  # 添加代理服务器
         )
         
         # 设置注册刷新时间
@@ -71,6 +71,9 @@ class VoIPCaller:
         logger.info(f"通话状态改变: {state}")
         if state == "DISCONNECTED":
             self.current_call = None
+        elif state == "FAILED":
+            logger.error("通话失败")
+            self.current_call = None
 
     def on_dtmf_received(self, call: VoIPCall, digit: str):
         """处理DTMF信号"""
@@ -84,6 +87,10 @@ class VoIPCaller:
                 return False
             
             logger.info(f"正在拨打: {number}")
+            
+            # 设置代理认证信息
+            self.phone.setProxyAuth(self.config['sip']['username'], self.config['sip']['password'])
+            
             self.current_call = self.phone.call(number)
             
             if self.current_call:

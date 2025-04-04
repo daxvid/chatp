@@ -23,15 +23,16 @@ class VoIPCaller:
             port=self.config['sip']['port'],
             username=self.config['sip']['username'],
             password=self.config['sip']['password'],
+            #sipPort=62060,
             callCallback=self.on_call,
             myIP="0.0.0.0"
         )
         
         # 设置注册刷新时间
-        self.phone.setRegisterRefresh(self.config['sip']['register_refresh'])
+        #self.phone.setRegisterRefresh(self.config['sip']['register_refresh'])
         
         # 设置保活时间
-        self.phone.setKeepAlive(self.config['sip']['keep_alive'])
+        #self.phone.setKeepAlive(self.config['sip']['keep_alive'])
         
         # 当前通话
         self.current_call = None
@@ -124,7 +125,7 @@ def main():
         time.sleep(5)
         
         # 测试拨打电话
-        target_number = "13344445555"  # 替换为实际要拨打的号码
+        target_number = "13216600657"  # 替换为实际要拨打的号码
         if caller.make_call(target_number):
             # 等待通话结束
             while caller.current_call:

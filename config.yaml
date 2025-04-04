@@ -1,6 +1,6 @@
 sip:
-  account: "169532@159.138.145.85:62060"  # SIP账户
-  server: "159.138.145.85:62060"          # SIP服务器地址
+  account: "169532"  # SIP账户
+  server: "159.138.145.85"                 # SIP服务器地址
   username: "169532"                       # SIP用户名
   password: "wangchuan123"                 # SIP密码
   port: 62060                              # SIP端口
@@ -11,7 +11,7 @@ sip:
 call:
   initial_message: "initial_message.wav"   # 初始语音文件
   response_timeout: 5                      # 等待用户响应时间（秒）
-  target_number: "sip:target_number@159.138.145.85:62060" # 目标电话号码
+  target_number: "sip:18722532680@159.138.145.85:62060" # 目标电话号码
 
 responses:
   greeting: "您好，我是AI助手，很高兴为您服务。"

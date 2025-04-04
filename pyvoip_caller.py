@@ -1,6 +1,7 @@
-from pyVoIP.VoIP import VoIPPhone, VoIPCall
 from pyVoIP.credentials import CredentialsManager
-from pyVoIP.VoIP.phone import VoIPPhoneParamter
+from pyVoIP.VoIP.call import VoIPCall
+from pyVoIP.VoIP.error import InvalidStateError
+from pyVoIP.VoIP.phone import VoIPPhone, VoIPPhoneParameter
 import time
 import yaml
 import logging
@@ -18,8 +19,8 @@ class Call(VoIPCall):
         try:
             self.answer()
             self.hangup()
-        except Exception as e:
-            logger.error(f"处理来电失败: {e}")
+        except InvalidStateError:
+            pass
 
 class VoIPCaller:
     def __init__(self, config_path="config.yaml"):
@@ -35,7 +36,7 @@ class VoIPCaller:
         )
         
         # 初始化SIP客户端参数
-        self.params = VoIPPhoneParamter(
+        self.params = VoIPPhoneParameter(
             self.config['sip']['server'],
             self.config['sip']['port'],
             self.config['sip']['username'],

@@ -154,8 +154,6 @@ def main():
     ep_cfg = pj.EpConfig()
     ep_cfg.uaConfig.maxCalls = 4
     ep_cfg.uaConfig.userAgent = "Python Auto Caller"
-    ep_cfg.uaConfig.stunServer = []
-    ep_cfg.uaConfig.nameserver = []
     ep.libInit(ep_cfg)
     
     # Create SIP transport
@@ -177,7 +175,7 @@ def main():
     acc_cfg.regConfig.delayBeforeRefreshSec = 5
     acc_cfg.regConfig.dropCallsOnFail = False
     acc_cfg.regConfig.unregWaitMsec = 5000
-    acc_cfg.regConfig.proxyUse = pj.PJSIP_REGISTER_INIT_PROXY
+    #acc_cfg.regConfig.proxyUse = pj.PJSIP_REGISTER_INIT_PROXY
     acc_cfg.sipConfig.authCreds.append(
         pj.AuthCredInfo("digest", "*", config.sip_config['username'], 0, config.sip_config['password'])
     )
@@ -200,4 +198,5 @@ def main():
         ep.libDelete()
 
 if __name__ == "__main__":
-    main() 
+    # main() 
+    print("Downloading model...")

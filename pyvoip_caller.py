@@ -1,7 +1,5 @@
-from pyVoIP.credentials import CredentialsManager
-from pyVoIP.VoIP.call import VoIPCall
-from pyVoIP.VoIP.error import InvalidStateError
-from pyVoIP.VoIP.phone import VoIPPhone, VoIPPhoneParameter
+from pyVoIP.VoIP import VoIPPhone, VoIPCall
+from pyVoIP.Connections import Connection
 import time
 import yaml
 import logging
@@ -19,8 +17,8 @@ class Call(VoIPCall):
         try:
             self.answer()
             self.hangup()
-        except InvalidStateError:
-            pass
+        except Exception as e:
+            logger.error(f"处理来电失败: {e}")
 
 class VoIPCaller:
     def __init__(self, config_path="config.yaml"):
@@ -28,25 +26,36 @@ class VoIPCaller:
         with open(config_path, 'r', encoding='utf-8') as f:
             self.config = yaml.safe_load(f)
         
-        # 初始化凭证管理器
-        self.cm = CredentialsManager()
-        self.cm.add(
-            self.config['sip']['username'],
-            self.config['sip']['password']
+        # 创建连接对象
+        sip_server = Connection(
+            self.config['sip']['server'],
+            self.config['sip']['port']
         )
         
-        # 初始化SIP客户端参数
-        self.params = VoIPPhoneParameter(
-            self.config['sip']['server'],
-            self.config['sip']['port'],
-            self.config['sip']['username'],
-            self.cm,
-            bind_ip="0.0.0.0",
-            call_class=Call
+        sip_client = Connection(
+            "0.0.0.0",
+            self.config['sip']['port']
         )
+        
+        server_proxy = None
+        if 'proxy' in self.config['sip'] and 'proxy_port' in self.config['sip']:
+            server_proxy = Connection(
+                self.config['sip']['proxy'],
+                self.config['sip']['proxy_port']
+            )
         
         # 初始化SIP客户端
-        self.phone = VoIPPhone(self.params)
+        self.phone = VoIPPhone(
+            sip_server=sip_server,
+            username=self.config['sip']['username'],
+            password=self.config['sip']['password'],
+            sip_client=sip_client,
+            server_proxy=server_proxy,
+            callCallback=self.on_call,
+            rtpPortLow=10000,
+            rtpPortHigh=20000,
+            behind_nat=False
+        )
         
         # 当前通话
         self.current_call = None

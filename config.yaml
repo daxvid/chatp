@@ -7,11 +7,9 @@ sip:
   transport: "UDP"                         # 传输协议
   register_refresh: 300                    # 注册刷新时间（秒）
   keep_alive: 15                          # 保活时间（秒）
+  target_number: "13216600657"
+  voice_file: "initial_message.wav"  # 语音文件路径
 
-call:
-  initial_message: "initial_message.wav"   # 初始语音文件
-  response_timeout: 5                      # 等待用户响应时间（秒）
-  target_number: "sip:18722532680@159.138.145.85:62060" # 目标电话号码
 
 responses:
   greeting: "您好，我是AI助手，很高兴为您服务。"

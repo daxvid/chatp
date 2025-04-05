@@ -1,27 +1,34 @@
 from enum import Enum
 from threading import Timer
 from typing import Callable, Dict, Optional, Union
-import inspect
 import audioop
 import io
 import pyVoIP
 import random
 import socket
-import netaddr
 import threading
 import time
+import warnings
+
 
 __all__ = [
-    'add_bytes', 'byte_to_bits', 'DynamicPayloadType', 'PayloadType',
-    'RTPParseError', 'RTPProtocol', 'RTPPacketManager', 'RTPClient',
-    'TransmitType'
+    "add_bytes",
+    "byte_to_bits",
+    "DynamicPayloadType",
+    "PayloadType",
+    "RTPParseError",
+    "RTPProtocol",
+    "RTPPacketManager",
+    "RTPClient",
+    "TransmitType",
 ]
+
 
 debug = pyVoIP.debug
 
 
 def byte_to_bits(byte: bytes) -> str:
-    nbyte = bin(ord(byte)).lstrip('-0b')
+    nbyte = bin(ord(byte)).lstrip("-0b")
     nbyte = ("0" * (8 - len(nbyte))) + nbyte
     return nbyte
 
@@ -29,7 +36,7 @@ def byte_to_bits(byte: bytes) -> str:
 def add_bytes(byte_string: bytes) -> int:
     binary = ""
     for byte in byte_string:
-        nbyte = bin(byte).lstrip('-0b')
+        nbyte = bin(byte).lstrip("-0b")
         nbyte = ("0" * (8 - len(nbyte))) + nbyte
         binary += nbyte
     return int(binary, 2)
@@ -44,26 +51,29 @@ class RTPParseError(Exception):
 
 
 class RTPProtocol(Enum):
-    UDP = 'udp'
-    AVP = 'RTP/AVP'
-    SAVP = 'RTP/SAVP'
-    AVPF = 'RTP/AVPF'
+    UDP = "udp"
+    AVP = "RTP/AVP"
+    SAVP = "RTP/SAVP"
 
 
 class TransmitType(Enum):
-    RECVONLY = 'recvonly'
-    SENDRECV = 'sendrecv'
-    SENDONLY = 'sendonly'
-    INACTIVE = 'inactive'
+    RECVONLY = "recvonly"
+    SENDRECV = "sendrecv"
+    SENDONLY = "sendonly"
+    INACTIVE = "inactive"
 
     def __str__(self):
         return self.value
 
 
 class PayloadType(Enum):
-
-    def __new__(cls, value: Union[int, str], clock: int = 0,
-                channel: int = 0, description: str = ""):
+    def __new__(
+        cls,
+        value: Union[int, str],
+        clock: int = 0,
+        channel: int = 0,
+        description: str = "",
+    ):
         obj = object.__new__(cls)
         obj._value_ = value
         obj.rate = clock
@@ -100,8 +110,9 @@ class PayloadType(Enum):
             return int(self.value)
         except ValueError:
             pass
-        raise DynamicPayloadType(self.description +
-                                 " is a dynamically assigned payload")
+        raise DynamicPayloadType(
+            self.description + " is a dynamically assigned payload"
+        )
 
     def __str__(self) -> str:
         if isinstance(self.value, int):
@@ -156,22 +167,16 @@ class RTPPacketManager:
         self.rebuilding = False
 
     def read(self, length: int = 160) -> bytes:
-        # Attention: many calls
-        # debug('INFO', f'{self.__class__.__name__}.{inspect.stack()[0][3]} called from '
-        #      f'{inspect.stack()[1][0].f_locals["self"].__class__.__name__}.{inspect.stack()[1][3]} start')
         # This acts functionally as a lock while the buffer is being rebuilt.
         while self.rebuilding:
             time.sleep(0.01)
-        self.bufferLock.acquire()
-        packet = self.buffer.read(length)
-        if len(packet) < length:
-            packet = packet + (b'\x80' * (length - len(packet)))
-        self.bufferLock.release()
+        with self.bufferLock:
+            packet = self.buffer.read(length)
+            if len(packet) < length:
+                packet = packet + (b"\x80" * (length - len(packet)))
         return packet
 
-    def rebuild(self, reset: bool, offset: int = 0, data: bytes = b'') -> None:
-        debug('INFO', f'{self.__class__.__name__}.{inspect.stack()[0][3]} called from '
-                      f'{inspect.stack()[1][0].f_locals["self"].__class__.__name__}.{inspect.stack()[1][3]} start')
+    def rebuild(self, reset: bool, offset: int = 0, data: bytes = b"") -> None:
         self.rebuilding = True
         if reset:
             self.log = {}
@@ -186,8 +191,7 @@ class RTPPacketManager:
         self.rebuilding = False
 
     def write(self, offset: int, data: bytes) -> None:
-        debug('INFO', f'{self.__class__.__name__}.{inspect.stack()[0][3]} called from '
-                      f'{inspect.stack()[1][0].f_locals["self"].__class__.__name__}.{inspect.stack()[1][3]} start')
+        # TODO: Can this safely be changed to use context manager syntax?
         self.bufferLock.acquire()
         self.log[offset] = data
         bufferloc = self.buffer.tell()
@@ -196,7 +200,7 @@ class RTPPacketManager:
             If the new timestamp is over 100,000 bytes before the
             earliest, erase the buffer.  This will stop memory errors.
             """
-            reset = (abs(offset - self.offset) >= 100000)
+            reset = abs(offset - self.offset) >= 100000
             self.offset = offset
             self.bufferLock.release()
             """
@@ -230,30 +234,26 @@ class RTPMessage:
         self.parse(data)
 
     def summary(self) -> str:
-        debug('INFO', f'{self.__class__.__name__}.{inspect.stack()[0][3]} called from '
-                      f'{inspect.stack()[1][0].f_locals["self"].__class__.__name__}.{inspect.stack()[1][3]} start')
         data = ""
         data += f"Version: {self.version}\n"
         data += f"Padding: {self.padding}\n"
         data += f"Extension: {self.extension}\n"
         data += f"CC: {self.CC}\n"
         data += f"Marker: {self.marker}\n"
-        data += f"Payload Type: {self.payload_type} " + \
-                f"({self.payload_type.value})\n"
+        data += (
+            f"Payload Type: {self.payload_type} "
+            + f"({self.payload_type.value})\n"
+        )
         data += f"Sequence Number: {self.sequence}\n"
         data += f"Timestamp: {self.timestamp}\n"
         data += f"SSRC: {self.SSRC}\n"
         return data
 
     def parse(self, packet: bytes) -> None:
-        debug('INFO', f'{self.__class__.__name__}.{inspect.stack()[0][3]} called from '
-                      f'{inspect.stack()[1][0].f_locals["self"].__class__.__name__}.{inspect.stack()[1][3]} start')
         byte = byte_to_bits(packet[0:1])
         self.version = int(byte[0:2], 2)
         if self.version not in self.RTPCompatibleVersions:
-            raise RTPParseError(f"RTP Version {self.version} not compatible {self.RTPCompatibleVersions}.")
-        debug('DEBUG',
-              f'{self.__class__.__name__}.{inspect.stack()[0][3]} RTP Version {self.version} not compatible {self.RTPCompatibleVersions}.')
+            raise RTPParseError(f"RTP Version {self.version} not compatible.")
         self.padding = bool(int(byte[2], 2))
         self.extension = bool(int(byte[3], 2))
         self.CC = int(byte[4:], 2)
@@ -281,7 +281,7 @@ class RTPMessage:
 
         i = 12
         for x in range(self.CC):
-            self.CSRC.append(packet[i:i + 4])
+            self.CSRC.append(packet[i : i + 4])
             i += 4
 
         if self.extension:
@@ -291,19 +291,24 @@ class RTPMessage:
 
 
 class RTPClient:
-    def __init__(self, assoc: Dict[int, PayloadType], inIP: str, inPort: int,
-                 outIP: str, outPort: int, sendrecv: TransmitType,
-                 dtmf: Optional[Callable[[str], None]] = None, behind_nat=False):
-        debug('INFO', f"{self.__class__.__name__}.{inspect.stack()[0][3]} {assoc}, {inIP}, {inPort}, {outIP}, "
-                      f"{outPort}, {sendrecv}, {dtmf}, {behind_nat}")
+    def __init__(
+        self,
+        assoc: Dict[int, PayloadType],
+        in_ip: str,
+        in_port: int,
+        out_ip: str,
+        out_port: int,
+        sendrecv: TransmitType,
+        dtmf: Optional[Callable[[str], None]] = None,
+    ):
         self.NSD = True
         # Example: {0: PayloadType.PCMU, 101: PayloadType.EVENT}
         self.assoc = assoc
-        debug('DEBUG', f"{self.__class__.__name__}.{inspect.stack()[0][3]} Selecting audio codec for transmission")
+        debug("Selecting audio codec for transmission")
         for m in assoc:
             try:
                 if int(assoc[m]) is not None:
-                    debug('DEBUG', f"{self.__class__.__name__}.{inspect.stack()[0][3]} Selected audio codec {assoc[m]}")
+                    debug(f"Selected {assoc[m]}")
                     """
                     Select the first available actual codec to encode with.
                     TODO: will need to change if video codecs
@@ -311,17 +316,13 @@ class RTPClient:
                     """
                     self.preference = assoc[m]
                     break
-            except:
-                debug('DEBUG', f"{self.__class__.__name__}.{inspect.stack()[0][3]} {assoc[m]} "
-                               f"cannot be selected as an audio codec")
+            except Exception:
+                debug(f"{assoc[m]} cannot be selected as an audio codec")
 
-        self.inIP = inIP
-        self.inPort = inPort
-        self.inIP_type = "IPv4" if netaddr.valid_ipv4(self.inIP) else "IPv6"
-        self.outIP = outIP
-        self.outPort = outPort
-        self.outIP_type = "IPv4" if netaddr.valid_ipv4(self.outIP) else "IPv6"
-        self.behind_nat = behind_nat
+        self.in_ip = in_ip
+        self.in_port = in_port
+        self.out_ip = out_ip
+        self.out_port = out_port
 
         self.dtmf = dtmf
 
@@ -333,110 +334,86 @@ class RTPClient:
         self.outTimestamp = random.randint(1, 10000)
         self.outSSRC = random.randint(1000, 65530)
 
-        self.is_first = True
-        debug('DEBUG', f"{self.__class__.__name__}.{inspect.stack()[0][3]} end")
-
     def start(self) -> None:
-        debug('INFO', f'{self.__class__.__name__}.{inspect.stack()[0][3]} called from '
-                      f'{inspect.stack()[1][0].f_locals["self"].__class__.__name__}.{inspect.stack()[1][3]} start self.inIP '
-                      f'= {self.inIP}, self.inPort = {self.inPort} ip_type = {self.inIP_type}')
-        self.sin = socket.socket((socket.AF_INET if self.inIP_type == "IPv4" else socket.AF_INET6), socket.SOCK_DGRAM)
-        self.sout = socket.socket((socket.AF_INET if self.outIP_type == "IPv4" else socket.AF_INET6), socket.SOCK_DGRAM)
-        self.sin.bind((self.inIP, self.inPort))
+        self.sin = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # Some systems just reply to the port they receive from instead of
+        # listening to the SDP.
+        self.sout = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sin.bind((self.in_ip, self.in_port))
         self.sin.setblocking(False)
-        self.r = Timer(1, self.recv)
-        self.r.name = "RTP Receiver"
-        self.r.start()
-        self.t = Timer(1, self.trans)
-        self.t.name = "RTP Transmitter"
-        self.t.start()
+
+        r = Timer(0, self.recv)
+        r.name = "RTP Receiver"
+        r.start()
+        t = Timer(0, self.trans)
+        t.name = "RTP Transmitter"
+        t.start()
 
     def stop(self) -> None:
-        debug('INFO', f'{self.__class__.__name__}.{inspect.stack()[0][3]} called from '
-                      f'{inspect.stack()[1][0].f_locals["self"].__class__.__name__}.{inspect.stack()[1][3]} start')
         self.NSD = False
-        self.r.cancel()
-        self.t.cancel()
-        self.sin.shutdown(socket.SHUT_RDWR)
-        self.sout.shutdown(socket.SHUT_RDWR)
-        self.sin.close()
-        self.sout.close()
+        if hasattr(self, "sin"):
+            if self.sin:
+                self.sin.close()
+        if hasattr(self, "sout"):
+            if self.sout:
+                self.sout.close()
 
     def read(self, length: int = 160, blocking: bool = True) -> bytes:
-        debug('INFO', f'{self.__class__.__name__}.{inspect.stack()[0][3]} called from '
-                      f'{inspect.stack()[1][0].f_locals["self"].__class__.__name__}.{inspect.stack()[1][3]} start')
         if not blocking:
             return self.pmin.read(length)
-        debug('DEBUG', f'{self.__class__.__name__}.{inspect.stack()[0][3]} after if not blocking')
         packet = self.pmin.read(length)
-        while packet == (b'\x80' * length) and self.NSD:
+        while packet == (b"\x80" * length) and self.NSD:
             time.sleep(0.01)
             packet = self.pmin.read(length)
         return packet
 
     def write(self, data: bytes) -> None:
-        debug('INFO', f'{self.__class__.__name__}.{inspect.stack()[0][3]} called from '
-                      f'{inspect.stack()[1][0].f_locals["self"].__class__.__name__}.{inspect.stack()[1][3]} start')
         self.pmout.write(self.outOffset, data)
         self.outOffset += len(data)
 
     def recv(self) -> None:
-        debug('INFO', f'{self.__class__.__name__}.{inspect.stack()[0][3]} called from '
-                      f'{inspect.stack()[1][0].f_locals["self"].__class__.__name__}.{inspect.stack()[1][3]} start with'
-                      f'inIP {self.inIP} inPort {self.inPort}')
         while self.NSD:
             try:
-                if self.is_first and self.behind_nat:
-                    debug('DEBUG', f'********************* start read with Test NAT hole punch IP '
-                                   f'{self.outIP} Port {self.outPort}')
-                    try:
-                        self.is_first = False
-                        self.sin.setblocking(True)
-                        self.sin.sendto(b'0', (self.outIP, self.outPort))
-                        self.sin.setblocking(False)
-                    except Exception as ex:
-                        debug('ERROR', str(ex))
-                    debug('DEBUG', f'********************* end read with Test NAT hole punch IP '
-                                   f'{self.outIP} Port {self.outPort}')
                 packet = self.sin.recv(8192)
                 self.parse_packet(packet)
             except BlockingIOError:
                 time.sleep(0.01)
             except RTPParseError as e:
-                debug('ERROR', str(e))
+                debug(str(e))
             except OSError:
                 pass
-            except Exception as ex:
-                debug('ERROR', str(ex))
 
     def trans(self) -> None:
-        debug('INFO', f'{self.__class__.__name__}.{inspect.stack()[0][3]} called from '
-                      f'{inspect.stack()[1][0].f_locals["self"].__class__.__name__}.{inspect.stack()[1][3]} start with '
-                      f'outIP {self.outIP} outPort {self.outPort}')
         while self.NSD:
             last_sent = time.monotonic_ns()
             payload = self.pmout.read()
             payload = self.encode_packet(payload)
             packet = b"\x80"  # RFC 1889 V2 No Padding Extension or CC.
-            packet += chr(int(self.preference)).encode('utf8')
+            packet += chr(int(self.preference)).encode("utf8")
             try:
-                packet += self.outSequence.to_bytes(2, byteorder='big')
+                packet += self.outSequence.to_bytes(2, byteorder="big")
             except OverflowError:
                 self.outSequence = 0
             try:
-                packet += self.outTimestamp.to_bytes(4, byteorder='big')
+                packet += self.outTimestamp.to_bytes(4, byteorder="big")
             except OverflowError:
                 self.outTimestamp = 0
-            packet += self.outSSRC.to_bytes(4, byteorder='big')
+            packet += self.outSSRC.to_bytes(4, byteorder="big")
             packet += payload
+
+            # debug(payload)
+
             try:
-                self.sout.sendto(packet, (self.outIP, self.outPort))
+                self.sout.sendto(packet, (self.out_ip, self.out_port))
             except OSError:
-                pass
+                warnings.warn(
+                    "RTP Packet failed to send!",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
 
             self.outSequence += 1
             self.outTimestamp += len(payload)
-            # time.sleep((1 / self.preference.rate) * 160)  # 1/8000 *160
             # Calculate how long it took to generate this packet.
             # Then how long we should wait to send the next, then devide by 2.
             delay = (1 / self.preference.rate) * 160
@@ -451,8 +428,6 @@ class RTPClient:
         return reduction if reduction else 1.0
 
     def parse_packet(self, packet: bytes) -> None:
-        debug('INFO', f'{self.__class__.__name__}.{inspect.stack()[0][3]} called from '
-                      f'{inspect.stack()[1][0].f_locals["self"].__class__.__name__}.{inspect.stack()[1][3]} start')
         msg = RTPMessage(packet, self.assoc)
         if msg.payload_type == PayloadType.PCMU:
             self.parse_pcmu(msg)
@@ -461,58 +436,58 @@ class RTPClient:
         elif msg.payload_type == PayloadType.EVENT:
             self.parse_telephone_event(msg)
         else:
-            raise RTPParseError("Unsupported codec (parse): " +
-                                str(msg.payload_type))
+            raise RTPParseError(
+                "Unsupported codec (parse): " + str(msg.payload_type)
+            )
 
     def encode_packet(self, payload: bytes) -> bytes:
-        # Attention: many calls
-        # debug('INFO', f'{self.__class__.__name__}.{inspect.stack()[0][3]} called from '
-        #      f'{inspect.stack()[1][0].f_locals["self"].__class__.__name__}.{inspect.stack()[1][3]} start')
         if self.preference == PayloadType.PCMU:
             return self.encode_pcmu(payload)
         elif self.preference == PayloadType.PCMA:
             return self.encode_pcma(payload)
         else:
-            raise RTPParseError("Unsupported codec (encode): " +
-                                str(self.preference))
+            raise RTPParseError(
+                "Unsupported codec (encode): " + str(self.preference)
+            )
 
     def parse_pcmu(self, packet: RTPMessage) -> None:
-        debug('INFO', f'{self.__class__.__name__}.{inspect.stack()[0][3]} called from '
-                      f'{inspect.stack()[1][0].f_locals["self"].__class__.__name__}.{inspect.stack()[1][3]} start')
         data = audioop.ulaw2lin(packet.payload, 1)
         data = audioop.bias(data, 1, 128)
         self.pmin.write(packet.timestamp, data)
 
     def encode_pcmu(self, packet: bytes) -> bytes:
-        # Attention: many calls
-        # debug('INFO', f'{self.__class__.__name__}.{inspect.stack()[0][3]} called from '
-        #      f'{inspect.stack()[1][0].f_locals["self"].__class__.__name__}.{inspect.stack()[1][3]} start')
         packet = audioop.bias(packet, 1, -128)
         packet = audioop.lin2ulaw(packet, 1)
         return packet
 
     def parse_pcma(self, packet: RTPMessage) -> None:
-        debug('INFO', f'{self.__class__.__name__}.{inspect.stack()[0][3]} called from '
-                      f'{inspect.stack()[1][0].f_locals["self"].__class__.__name__}.{inspect.stack()[1][3]} start')
         data = audioop.alaw2lin(packet.payload, 1)
         data = audioop.bias(data, 1, 128)
         self.pmin.write(packet.timestamp, data)
 
     def encode_pcma(self, packet: bytes) -> bytes:
-        debug('INFO', f'{self.__class__.__name__}.{inspect.stack()[0][3]} called from '
-                      f'{inspect.stack()[1][0].f_locals["self"].__class__.__name__}.{inspect.stack()[1][3]} start')
         packet = audioop.bias(packet, 1, -128)
         packet = audioop.lin2alaw(packet, 1)
         return packet
 
     def parse_telephone_event(self, packet: RTPMessage) -> None:
-        debug('INFO', f'{self.__class__.__name__}.{inspect.stack()[0][3]} called from '
-                      f'{inspect.stack()[1][0].f_locals["self"].__class__.__name__}.{inspect.stack()[1][3]} start')
         key = [
-            '0', '1', '2', '3',
-            '4', '5', '6', '7',
-            '8', '9', '*', '#',
-            'A', 'B', 'C', 'D'
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "*",
+            "#",
+            "A",
+            "B",
+            "C",
+            "D",
         ]
 
         payload = packet.payload

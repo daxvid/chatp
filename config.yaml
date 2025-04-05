@@ -8,7 +8,9 @@ sip:
   register_refresh: 300                    # 注册刷新时间（秒）
   keep_alive: 15                          # 保活时间（秒）
   target_number: "13216600657"
-  voice_file: "initial_message.wav"  # 语音文件路径
+  voice_file: "initial_message.wav"       # 语音文件路径
+  bind_ip: "0.0.0.0"  # 可选
+  bind_port: 5060  # 本地绑定端口
 
 
 responses:

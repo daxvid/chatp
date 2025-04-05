@@ -395,14 +395,30 @@ class SIPMessage:
         debug('INFO', f'{self.__class__.__name__}.{inspect.stack()[0][3]} called from '
                       f'{inspect.stack()[1][0].f_locals["self"].__class__.__name__}.{inspect.stack()[1][3]} start')
         try:
-            headers, body = data.split(b'\r\n\r\n')
+            parts = data.split(b'\r\n\r\n')
+            if len(parts) > 1:
+                headers, body = parts[0], parts[1]
+            else:
+                headers = parts[0]
+                body = b''
         except ValueError as ve:
             debug('ERROR', f'Error unpacking data, only using header: {ve}')
             headers = data.split(b'\r\n\r\n')[0]
+            body = b''
 
         headers_raw = headers.split(b'\r\n')
+        if not headers_raw:
+            raise SIPParseError("Empty SIP message")
+
         heading = headers_raw.pop(0)
-        check = str(heading.split(b" ")[0], 'utf8')
+        if not heading:
+            raise SIPParseError("Empty SIP message header")
+
+        try:
+            check = str(heading.split(b" ")[0], 'utf8')
+        except (IndexError, UnicodeDecodeError) as e:
+            debug('ERROR', f'Error parsing SIP message header: {e}')
+            raise SIPParseError("Invalid SIP message header")
 
         if check in self.SIPCompatibleVersions:
             self.type = SIPMessageType.RESPONSE
@@ -756,15 +772,11 @@ class SIPClient:
         self.sip_client_public: Connection = None
         self.username = username
         self.password = password
-
         self.callCallback = callCallback
-
         self.tags: List[str] = []
         self.tagLibrary = {'register': self.gen_tag()}
-
         self.default_expires = 120
         self.register_timeout = 30
-
         self.inviteCounter = Counter()
         self.registerCounter = Counter()
         self.subscribeCounter = Counter()
@@ -772,13 +784,15 @@ class SIPClient:
         self.callID = Counter(random.randint(1, 1000))
         self.sessID = Counter()
         self.nonce_count = Counter()
-
         self.urnUUID = self.gen_urn_uuid()
-
         self.registerThread: Optional[Timer] = None
         self.recvLock = Lock()
+        self.s = None
+        self.out = None
 
     def send_message(self, message: str) -> None:
+        if not self.NSD or not self.out:
+            raise RuntimeError("SIPClient not started")
         debug('INFO', f'{self.__class__.__name__}.{inspect.stack()[0][3]} called from '
                       f'{inspect.stack()[1][0].f_locals["self"].__class__.__name__}.{inspect.stack()[1][3]} '
                       f'--> message server '
@@ -909,7 +923,6 @@ class SIPClient:
         self.s = socket.socket((socket.AF_INET if self.sip_client.ip_type == "IPv4" else socket.AF_INET6),
                                socket.SOCK_DGRAM)
         self.s.bind((self.sip_client.get_address(), self.sip_client.get_port()))
-        # self.s.bind(('', self.sip_client.get_port()))
         self.out = self.s
         self.register()
         t = Timer(0.1, self.recv)

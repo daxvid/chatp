@@ -170,24 +170,55 @@ class SIPCall(pj.Call):
     def onCallState(self, prm):
         """呼叫状态改变时的回调函数"""
         ci = self.getInfo()
-        logger.info(f"呼叫状态: {ci.state}, 最后状态码: {ci.lastStatusCode}")
+        state_names = {
+            pj.PJSIP_INV_STATE_NULL: "NULL",
+            pj.PJSIP_INV_STATE_CALLING: "CALLING",
+            pj.PJSIP_INV_STATE_INCOMING: "INCOMING",
+            pj.PJSIP_INV_STATE_EARLY: "EARLY",
+            pj.PJSIP_INV_STATE_CONNECTING: "CONNECTING",
+            pj.PJSIP_INV_STATE_CONFIRMED: "CONFIRMED",
+            pj.PJSIP_INV_STATE_DISCONNECTED: "DISCONNECTED"
+        }
+        state_name = state_names.get(ci.state, f"未知状态({ci.state})")
+        logger.info(f"呼叫状态改变: {state_name}, 状态码: {ci.lastStatusCode}, 原因: {ci.lastReason}")
         
-        if ci.state == pj.PJSIP_INV_STATE_CONFIRMED:
+        # 根据不同的状态执行不同的操作
+        if ci.state == pj.PJSIP_INV_STATE_CALLING:
+            logger.info("正在呼叫中...")
+            
+        elif ci.state == pj.PJSIP_INV_STATE_EARLY:
+            logger.info("对方电话开始响铃...")
+            
+        elif ci.state == pj.PJSIP_INV_STATE_CONNECTING:
+            logger.info("正在建立连接...")
+            
+        elif ci.state == pj.PJSIP_INV_STATE_CONFIRMED:
             logger.info("通话已接通")
             if self.voice_data:
                 # 创建音频播放器
                 player = pj.AudioMediaPlayer()
                 try:
+                    logger.info(f"开始播放语音文件: {self.voice_file}")
                     player.createPlayer(self.voice_file)
                     # 连接到通话
-                    player.startTransmit(self.getAudioVideoStream()[0])
+                    audio_stream = self.getAudioVideoStream()[0]
+                    logger.info(f"获取音频流成功，开始传输")
+                    player.startTransmit(audio_stream)
+                    logger.info(f"语音播放已开始")
                     
                     # 开始录音
                     self.start_recording(prm.remoteUri)
                 except pj.Error as e:
                     logger.error(f"播放语音失败: {e}")
+            else:
+                logger.warning("语音文件未加载，无法播放")
+                
         elif ci.state == pj.PJSIP_INV_STATE_DISCONNECTED:
-            logger.info("通话已结束")
+            if ci.lastStatusCode >= 400:
+                logger.error(f"通话失败: 状态码={ci.lastStatusCode}, 原因={ci.lastReason}")
+            else:
+                logger.info(f"通话已结束: 状态码={ci.lastStatusCode}, 原因={ci.lastReason}")
+            
             # 停止录音
             self.stop_recording()
             # 转录音频
@@ -218,41 +249,120 @@ class SIPCaller:
             ep_cfg = pj.EpConfig()
             # 禁用SSL证书验证
             ep_cfg.uaConfig.verifyServerCert = False
+            
+            # 设置日志级别
+            ep_cfg.logConfig.level = 5  # 设置为高级别日志，便于调试
+            ep_cfg.logConfig.consoleLevel = 5
+            
+            # 初始化媒体配置
+            ep_cfg.medConfig.ecTailLen = 0  # 禁用回声消除
+            
+            # 初始化PJSIP库
+            logger.info("正在初始化PJSIP库...")
             self.ep.libInit(ep_cfg)
+            logger.info("PJSIP库初始化成功")
 
             # 创建传输
             sipTpConfig = pj.TransportConfig()
             sipTpConfig.port = self.config.get('bind_port', 5060)
-            self.ep.transportCreate(pj.PJSIP_TRANSPORT_UDP, sipTpConfig)
+            
+            # 指定本地IP（如果配置中有）
+            if self.config.get('bind_ip'):
+                sipTpConfig.boundAddr = self.config.get('bind_ip')
+                logger.info(f"绑定本地IP: {sipTpConfig.boundAddr}:{sipTpConfig.port}")
+            
+            logger.info(f"创建SIP传输，端口: {sipTpConfig.port}")
+            self.transport_id = self.ep.transportCreate(pj.PJSIP_TRANSPORT_UDP, sipTpConfig)
+            logger.info(f"SIP传输创建成功，ID: {self.transport_id}")
+            # transportCreate返回的是整数ID，不是对象，无法直接调用getInfo()
+            # 记录一下基本信息即可
+            logger.info(f"本地SIP端口: {sipTpConfig.port}")
 
             # 启动库
+            logger.info("启动PJSIP库...")
             self.ep.libStart()
+            logger.info("PJSIP库启动成功")
 
             # 创建账户配置
             acc_cfg = pj.AccountConfig()
             acc_cfg.idUri = f"sip:{self.config['username']}@{self.config['server']}:{self.config['port']}"
             acc_cfg.regConfig.registrarUri = f"sip:{self.config['server']}:{self.config['port']}"
-            acc_cfg.sipConfig.authCreds.append(
-                pj.AuthCredInfo(
-                    "digest",
-                    "*",
-                    self.config['username'],
-                    0,
-                    self.config['password']
-                )
+            
+            # 配置认证信息
+            cred_info = pj.AuthCredInfo(
+                "digest",
+                "*",
+                self.config['username'],
+                0,
+                self.config['password']
             )
+            acc_cfg.sipConfig.authCreds.append(cred_info)
+            
+            # 设置注册超时时间
+            if self.config.get('register_refresh'):
+                acc_cfg.regConfig.timeoutSec = int(self.config.get('register_refresh'))
+                logger.info(f"设置注册刷新时间: {acc_cfg.regConfig.timeoutSec}秒")
+            
+            # 设置Keep-Alive时间
+            if self.config.get('keep_alive'):
+                acc_cfg.sipConfig.keepAliveIntervalSec = int(self.config.get('keep_alive'))
+                logger.info(f"设置Keep-Alive时间: {acc_cfg.sipConfig.keepAliveIntervalSec}秒")
+            
+            logger.info(f"创建SIP账户: {acc_cfg.idUri}, 注册到: {acc_cfg.regConfig.registrarUri}")
 
             # 创建账户
             self.acc = pj.Account()
             self.acc.create(acc_cfg)
-
+            
             # 等待注册完成
-            while self.acc.getInfo().regStatus != pj.PJSIP_SC_OK:
-                time.sleep(0.1)
+            logger.info("等待SIP注册...")
+            timeout = 30  # 30秒超时
+            start_time = time.time()
+            
+            # 修复部分：确保self.acc是有效的Account对象，并且可以调用getInfo()
+            # 同时处理可能的异常情况
+            while time.time() - start_time < timeout:
+                try:
+                    if not isinstance(self.acc, pj.Account):
+                        logger.error(f"账户对象类型错误: {type(self.acc)}")
+                        break
+                        
+                    acc_info = self.acc.getInfo()
+                    if acc_info.regStatus == pj.PJSIP_SC_OK:
+                        logger.info("SIP注册成功")
+                        break
+                    elif acc_info.regStatus >= 300:  # 任何错误状态码
+                        logger.error(f"SIP注册失败，状态码: {acc_info.regStatus}")
+                        break
+                except Exception as e:
+                    logger.error(f"获取账户信息时出错: {e}")
+                    break
+                    
+                time.sleep(0.5)  # 稍微增加检查间隔，减少CPU使用
+            
+            # 再次检查注册状态
+            try:
+                if isinstance(self.acc, pj.Account):
+                    acc_info = self.acc.getInfo()
+                    logger.info(f"SIP账户信息: URI={acc_info.uri}, 状态码={acc_info.regStatus}, 过期={acc_info.regExpiresSec}秒")
+                    
+                    if acc_info.regStatus != pj.PJSIP_SC_OK:
+                        logger.warning(f"SIP注册未成功完成，状态码: {acc_info.regStatus}")
+                else:
+                    logger.error("账户对象无效")
+            except Exception as e:
+                logger.error(f"获取最终账户状态时出错: {e}")
 
             logger.info("SIP客户端初始化成功")
         except pj.Error as e:
             logger.error(f"初始化PJSIP失败: {e}")
+            if hasattr(e, 'info'):
+                logger.error(f"详细错误信息: {e.info()}")
+            raise
+        except Exception as e:
+            logger.error(f"初始化PJSIP过程中出现非PJSIP错误: {e}")
+            import traceback
+            logger.error(f"详细错误: {traceback.format_exc()}")
             raise
 
     def set_whisper_model(self, model):
@@ -266,25 +376,54 @@ class SIPCaller:
                 logger.warning("已有通话在进行中")
                 return False
 
-            # 清理号码中可能的特殊字符
-            clean_number = ''.join(c for c in number if c.isdigit() or c in ['+', '*', '#'])
+            # 检查number是否已经是完整的SIP URI
+            if number.startswith("sip:") or number.startswith("tel:"):
+                # 已经是完整的URI
+                sip_uri = number
+                logger.info(f"使用完整的SIP URI: {sip_uri}")
+            else:
+                # 清理号码中可能的特殊字符
+                clean_number = ''.join(c for c in number if c.isdigit() or c in ['+', '*', '#'])
+                
+                # 构建简单的URI
+                sip_uri = clean_number
+                logger.info(f"使用简单号码: {sip_uri}")
             
-            # 构建SIP URI
-            sip_uri = f"sip:{clean_number}@{self.config['server']}:{self.config['port']}"
-            logger.info(f"正在拨打: {sip_uri}")
-            
-            # 添加更多调试信息
-            logger.info(f"服务器信息: {self.config['server']}:{self.config['port']}")
-            logger.info(f"账户信息: {self.config['username']}")
+            # 添加调试信息
+            logger.info(f"拨打: {sip_uri}")
+            logger.info(f"SIP账户: {self.config['username']}@{self.config['server']}:{self.config['port']}")
             
             # 创建通话
             call = SIPCall(self.acc, voice_file, self.whisper_model)
             call_prm = pj.CallOpParam()
-            logger.info("开始拨号...")
+            call_prm.opt.audioCount = 1
+            call_prm.opt.videoCount = 0
+            
+            # 开始拨号
+            logger.info(f"开始拨号: {sip_uri}...")
             call.makeCall(sip_uri, call_prm)
+            logger.info("makeCall命令已发送")
             
             self.current_call = call
-            logger.info("呼叫已建立")
+            
+            # 等待几秒观察呼叫状态
+            for i in range(5):
+                if call.isActive():
+                    try:
+                        ci = call.getInfo()
+                        logger.info(f"呼叫状态 [{i}秒]: 状态={ci.state}, 状态码={ci.lastStatusCode}, 原因={ci.lastReason}")
+                        
+                        # 如果遇到一些特定错误，则停止尝试
+                        if ci.state == pj.PJSIP_INV_STATE_DISCONNECTED and ci.lastStatusCode >= 400:
+                            logger.error(f"呼叫失败，状态码: {ci.lastStatusCode}, 原因: {ci.lastReason}")
+                            return False
+                    except Exception as e:
+                        logger.warning(f"检查呼叫状态时出错: {e}")
+                else:
+                    logger.info(f"呼叫状态 [{i}秒]: 呼叫不活跃")
+                
+                time.sleep(1)
+                
             return True
                 
         except pj.Error as e:
@@ -292,6 +431,8 @@ class SIPCaller:
             # 输出详细错误信息
             if hasattr(e, 'status') and hasattr(e, 'reason'):
                 logger.error(f"SIP错误状态: {e.status}, 原因: {e.reason}")
+            else:
+                logger.error(f"完整错误信息: {str(e)}")
             return False
         except Exception as e:
             logger.error(f"拨号过程中发生未知错误: {e}")

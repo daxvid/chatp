@@ -3,6 +3,7 @@ import time
 import csv
 import logging
 from datetime import datetime
+import pjsua2 as pj
 
 logger = logging.getLogger("call_manager")
 
@@ -66,11 +67,15 @@ class CallManager:
     def make_call_with_tts(self, phone_number, text, voice="zh-CN-XiaoxiaoNeural"):
         """使用TTS拨打电话"""
         try:
+            logger.info(f"准备拨打电话 {phone_number}...")
+            
             # 生成语音文件
+            logger.info(f"生成语音: '{text[:30]}...'")
             wav_file = self.tts_manager.generate_tts_sync(text, voice)
             if not wav_file:
                 logger.error("TTS生成失败，无法拨打电话")
                 return None
+            logger.info(f"语音文件生成成功: {wav_file}")
                 
             # 设置Whisper模型
             self.sip_caller.set_whisper_model(self.whisper_manager.model)
@@ -79,6 +84,7 @@ class CallManager:
             start_time = datetime.now()
             
             # 拨打电话
+            logger.info(f"开始拨打电话: {phone_number}")
             call_result = self.sip_caller.make_call(phone_number, wav_file)
             
             # 初始化结果
@@ -93,25 +99,81 @@ class CallManager:
             
             # 如果接通成功，等待通话结束
             if call_result:
-                # 等待通话结束
-                while self.sip_caller.current_call:
+                logger.info(f"电话 {phone_number} 呼叫建立，等待通话完成...")
+                
+                # 等待通话接通或失败（最多60秒）
+                call_connect_timeout = 60  # 60秒接通超时
+                call_connect_start = time.time()
+                
+                # 等待通话状态变化
+                while self.sip_caller.current_call and time.time() - call_connect_start < call_connect_timeout:
+                    # 检查通话状态
+                    if hasattr(self.sip_caller.current_call, 'getInfo'):
+                        try:
+                            call_info = self.sip_caller.current_call.getInfo()
+                            # 如果通话已接通或已断开，退出等待
+                            if call_info.state == pj.PJSIP_INV_STATE_CONFIRMED:
+                                logger.info(f"电话 {phone_number} 已接通")
+                                break
+                            elif call_info.state == pj.PJSIP_INV_STATE_DISCONNECTED:
+                                logger.info(f"电话 {phone_number} 已断开连接，状态码: {call_info.lastStatusCode}")
+                                break
+                        except Exception as e:
+                            logger.warning(f"获取呼叫状态异常: {e}")
+                    
                     time.sleep(1)
+                
+                # 如果超时未接通，主动挂断
+                if time.time() - call_connect_start >= call_connect_timeout:
+                    logger.warning(f"电话 {phone_number} 接通超时，主动挂断")
+                    self.sip_caller.hangup()
+                    result['status'] = '接通超时'
+                else:
+                    # 如果已接通，等待通话结束
+                    call_duration_timeout = 180  # 通话最长3分钟
+                    call_duration_start = time.time()
+                    
+                    while self.sip_caller.current_call and time.time() - call_duration_start < call_duration_timeout:
+                        time.sleep(1)
+                    
+                    # 如果通话超时，主动挂断
+                    if time.time() - call_duration_start >= call_duration_timeout:
+                        logger.warning(f"电话 {phone_number} 通话时间过长，主动挂断")
+                        self.sip_caller.hangup()
                 
                 # 计算通话时长
                 duration = (datetime.now() - start_time).total_seconds()
                 result['duration'] = f"{duration:.1f}秒"
                 
-                # 获取录音文件和转录结果
-                if hasattr(self.sip_caller.current_call, 'recording_file') and self.sip_caller.current_call.recording_file:
-                    result['recording'] = self.sip_caller.current_call.recording_file
-                    
-                    # 获取转录结果
-                    transcription = self.sip_caller.current_call.transcribe_audio()
-                    if transcription:
-                        result['transcription'] = transcription
+                # 检查是否有有效的呼叫对象
+                if self.sip_caller.current_call:
+                    # 获取录音文件和转录结果
+                    if hasattr(self.sip_caller.current_call, 'recording_file') and self.sip_caller.current_call.recording_file:
+                        result['recording'] = self.sip_caller.current_call.recording_file
+                        
+                        # 获取转录结果
+                        logger.info(f"尝试转录通话录音: {result['recording']}")
+                        transcription = self.sip_caller.current_call.transcribe_audio()
+                        if transcription:
+                            result['transcription'] = transcription
+                            logger.info(f"转录结果: {transcription[:50]}...")
+                        else:
+                            logger.warning("无法获取转录结果")
+                    else:
+                        logger.warning("未找到录音文件")
+                else:
+                    logger.warning("呼叫对象无效，无法获取录音或转录")
+            else:
+                logger.warning(f"电话 {phone_number} 拨打失败")
+            
+            # 确保通话已结束
+            if self.sip_caller.current_call:
+                logger.info(f"确保通话结束，挂断电话 {phone_number}")
+                self.sip_caller.hangup()
             
             # 保存结果
             self.call_results.append(result)
+            logger.info(f"电话 {phone_number} 处理完成: 状态={result['status']}, 时长={result['duration']}")
             return result
             
         except Exception as e:
@@ -128,6 +190,10 @@ class CallManager:
                 'recording': '',
                 'transcription': ''
             })
+            
+            # 确保通话已结束
+            if hasattr(self, 'sip_caller') and self.sip_caller and self.sip_caller.current_call:
+                self.sip_caller.hangup()
             
             return None
             

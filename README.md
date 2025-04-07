@@ -125,4 +125,4 @@ Edge TTS支持多种语言和声音，以下是部分中文语音：
 
 ## 许可证
 
-MIT License 
+MIT License

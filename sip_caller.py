@@ -169,61 +169,97 @@ class SIPCall(pj.Call):
     
     def onCallState(self, prm):
         """呼叫状态改变时的回调函数"""
-        ci = self.getInfo()
-        state_names = {
-            pj.PJSIP_INV_STATE_NULL: "NULL",
-            pj.PJSIP_INV_STATE_CALLING: "CALLING",
-            pj.PJSIP_INV_STATE_INCOMING: "INCOMING",
-            pj.PJSIP_INV_STATE_EARLY: "EARLY",
-            pj.PJSIP_INV_STATE_CONNECTING: "CONNECTING",
-            pj.PJSIP_INV_STATE_CONFIRMED: "CONFIRMED",
-            pj.PJSIP_INV_STATE_DISCONNECTED: "DISCONNECTED"
-        }
-        state_name = state_names.get(ci.state, f"未知状态({ci.state})")
-        logger.info(f"呼叫状态改变: {state_name}, 状态码: {ci.lastStatusCode}, 原因: {ci.lastReason}")
-        
-        # 根据不同的状态执行不同的操作
-        if ci.state == pj.PJSIP_INV_STATE_CALLING:
-            logger.info("正在呼叫中...")
+        try:
+            ci = self.getInfo()
+            state_names = {
+                pj.PJSIP_INV_STATE_NULL: "NULL",
+                pj.PJSIP_INV_STATE_CALLING: "CALLING",
+                pj.PJSIP_INV_STATE_INCOMING: "INCOMING",
+                pj.PJSIP_INV_STATE_EARLY: "EARLY",
+                pj.PJSIP_INV_STATE_CONNECTING: "CONNECTING",
+                pj.PJSIP_INV_STATE_CONFIRMED: "CONFIRMED",
+                pj.PJSIP_INV_STATE_DISCONNECTED: "DISCONNECTED"
+            }
+            state_name = state_names.get(ci.state, f"未知状态({ci.state})")
+            logger.info(f"呼叫状态改变: {state_name}, 状态码: {ci.lastStatusCode}, 原因: {ci.lastReason}")
             
-        elif ci.state == pj.PJSIP_INV_STATE_EARLY:
-            logger.info("对方电话开始响铃...")
-            
-        elif ci.state == pj.PJSIP_INV_STATE_CONNECTING:
-            logger.info("正在建立连接...")
-            
-        elif ci.state == pj.PJSIP_INV_STATE_CONFIRMED:
-            logger.info("通话已接通")
-            if self.voice_data:
-                # 创建音频播放器
-                player = pj.AudioMediaPlayer()
-                try:
-                    logger.info(f"开始播放语音文件: {self.voice_file}")
-                    player.createPlayer(self.voice_file)
-                    # 连接到通话
-                    audio_stream = self.getAudioVideoStream()[0]
-                    logger.info(f"获取音频流成功，开始传输")
-                    player.startTransmit(audio_stream)
-                    logger.info(f"语音播放已开始")
-                    
-                    # 开始录音
-                    self.start_recording(prm.remoteUri)
-                except pj.Error as e:
-                    logger.error(f"播放语音失败: {e}")
-            else:
-                logger.warning("语音文件未加载，无法播放")
+            # 根据不同的状态执行不同的操作
+            if ci.state == pj.PJSIP_INV_STATE_CALLING:
+                logger.info("正在呼叫中...")
                 
-        elif ci.state == pj.PJSIP_INV_STATE_DISCONNECTED:
-            if ci.lastStatusCode >= 400:
-                logger.error(f"通话失败: 状态码={ci.lastStatusCode}, 原因={ci.lastReason}")
-            else:
-                logger.info(f"通话已结束: 状态码={ci.lastStatusCode}, 原因={ci.lastReason}")
-            
-            # 停止录音
-            self.stop_recording()
-            # 转录音频
-            if self.recording_file:
-                self.transcribe_audio()
+            elif ci.state == pj.PJSIP_INV_STATE_EARLY:
+                logger.info("对方电话开始响铃...")
+                
+            elif ci.state == pj.PJSIP_INV_STATE_CONNECTING:
+                logger.info("正在建立连接...")
+                
+            elif ci.state == pj.PJSIP_INV_STATE_CONFIRMED:
+                logger.info("通话已接通")
+                if self.voice_file and os.path.exists(self.voice_file):
+                    try:
+                        # 创建音频播放器
+                        player = pj.AudioMediaPlayer()
+                        logger.info(f"尝试播放语音文件: {self.voice_file}")
+                        
+                        # 加载并检查语音文件
+                        try:
+                            player.createPlayer(self.voice_file)
+                            logger.info("语音播放器已创建")
+                        except Exception as e:
+                            logger.error(f"创建播放器失败: {e}")
+                            return
+                            
+                        # 等待确保通话流建立
+                        time.sleep(0.5)
+                        
+                        # 获取通话媒体
+                        try:
+                            audio_stream = self.getAudioMedia(-1)
+                            logger.info("成功获取音频媒体")
+                        except Exception as e:
+                            logger.error(f"获取音频媒体失败: {e}")
+                            
+                            # 尝试通过另一种方式获取
+                            try:
+                                audio_stream = self.getAudioVideoStream()[0]
+                                logger.info("通过备选方法获取到音频流")
+                            except Exception as e2:
+                                logger.error(f"获取音频流失败: {e2}")
+                                return
+                        
+                        # 开始传输音频
+                        player.startTransmit(audio_stream)
+                        logger.info("开始播放语音，音频传输已启动")
+                        
+                        # 开始录音
+                        if prm and hasattr(prm, 'remoteUri') and prm.remoteUri:
+                            self.start_recording(prm.remoteUri)
+                        else:
+                            logger.warning("缺少远程URI信息，使用未知号码录音")
+                            self.start_recording("unknown")
+                            
+                    except Exception as e:
+                        logger.error(f"播放语音过程中出错: {e}")
+                        import traceback
+                        logger.error(f"详细错误: {traceback.format_exc()}")
+                else:
+                    logger.warning(f"语音文件不存在或未指定: {self.voice_file}")
+                    
+            elif ci.state == pj.PJSIP_INV_STATE_DISCONNECTED:
+                if ci.lastStatusCode >= 400:
+                    logger.error(f"通话失败: 状态码={ci.lastStatusCode}, 原因={ci.lastReason}")
+                else:
+                    logger.info(f"通话已结束: 状态码={ci.lastStatusCode}, 原因={ci.lastReason}")
+                
+                # 停止录音
+                self.stop_recording()
+                # 转录音频
+                if self.recording_file and os.path.exists(self.recording_file):
+                    self.transcribe_audio()
+        except Exception as e:
+            logger.error(f"处理呼叫状态变化时出错: {e}")
+            import traceback
+            logger.error(f"详细错误: {traceback.format_exc()}")
 
 
 class SIPCaller:
@@ -303,10 +339,10 @@ class SIPCaller:
                 acc_cfg.regConfig.timeoutSec = int(self.config.get('register_refresh'))
                 logger.info(f"设置注册刷新时间: {acc_cfg.regConfig.timeoutSec}秒")
             
-            # 设置Keep-Alive时间
-            if self.config.get('keep_alive'):
-                acc_cfg.sipConfig.keepAliveIntervalSec = int(self.config.get('keep_alive'))
-                logger.info(f"设置Keep-Alive时间: {acc_cfg.sipConfig.keepAliveIntervalSec}秒")
+            # 设置Keep-Alive时间 - 注释掉这部分，因为在Python绑定中不存在这个属性
+            # if self.config.get('keep_alive'):
+            #     acc_cfg.sipConfig.keepAliveIntervalSec = int(self.config.get('keep_alive'))
+            #     logger.info(f"设置Keep-Alive时间: {acc_cfg.sipConfig.keepAliveIntervalSec}秒")
             
             logger.info(f"创建SIP账户: {acc_cfg.idUri}, 注册到: {acc_cfg.regConfig.registrarUri}")
 
@@ -376,55 +412,91 @@ class SIPCaller:
                 logger.warning("已有通话在进行中")
                 return False
 
-            # 检查number是否已经是完整的SIP URI
-            if number.startswith("sip:") or number.startswith("tel:"):
-                # 已经是完整的URI
+            # 检查SIP账户是否注册成功
+            try:
+                acc_info = self.acc.getInfo()
+                if acc_info.regStatus != pj.PJSIP_SC_OK:
+                    logger.error(f"SIP账户未注册成功，状态码: {acc_info.regStatus}")
+                    logger.error("在注册成功前不能拨打电话")
+                    return False
+            except Exception as e:
+                logger.error(f"获取SIP账户状态失败: {e}")
+                return False
+                
+            # 构建SIP URI
+            if number.startswith("sip:"):
+                # 已经是完整的SIP URI
                 sip_uri = number
-                logger.info(f"使用完整的SIP URI: {sip_uri}")
+                logger.info(f"使用原始SIP URI: {sip_uri}")
             else:
-                # 清理号码中可能的特殊字符
+                # 清理号码，只保留数字和拨号字符
                 clean_number = ''.join(c for c in number if c.isdigit() or c in ['+', '*', '#'])
                 
-                # 构建简单的URI
-                sip_uri = clean_number
-                logger.info(f"使用简单号码: {sip_uri}")
+                # 构建完整SIP URI
+                sip_uri = f"sip:{clean_number}@{self.config['server']}:{self.config['port']}"
+                logger.info(f"构建SIP URI: {sip_uri}")
             
-            # 添加调试信息
-            logger.info(f"拨打: {sip_uri}")
+            # 详细日志
+            logger.info(f"=== 开始拨号 ===")
+            logger.info(f"目标号码: {number}")
+            logger.info(f"SIP URI: {sip_uri}")
             logger.info(f"SIP账户: {self.config['username']}@{self.config['server']}:{self.config['port']}")
+            if voice_file:
+                logger.info(f"语音文件: {voice_file}")
             
             # 创建通话
             call = SIPCall(self.acc, voice_file, self.whisper_model)
-            call_prm = pj.CallOpParam()
+            
+            # 设置呼叫参数
+            call_prm = pj.CallOpParam(True)  # 使用默认值
             call_prm.opt.audioCount = 1
             call_prm.opt.videoCount = 0
             
             # 开始拨号
-            logger.info(f"开始拨号: {sip_uri}...")
+            logger.info(f"发送拨号请求: {sip_uri}")
             call.makeCall(sip_uri, call_prm)
-            logger.info("makeCall命令已发送")
+            logger.info("拨号请求已发送")
             
             self.current_call = call
             
-            # 等待几秒观察呼叫状态
-            for i in range(5):
-                if call.isActive():
-                    try:
-                        ci = call.getInfo()
-                        logger.info(f"呼叫状态 [{i}秒]: 状态={ci.state}, 状态码={ci.lastStatusCode}, 原因={ci.lastReason}")
+            # 等待呼叫状态变化
+            logger.info("等待呼叫状态变化...")
+            for i in range(10):
+                if not call.isActive():
+                    logger.warning(f"呼叫已不再活跃 [{i}秒]")
+                    break
+                    
+                try:
+                    ci = call.getInfo()
+                    state_names = {
+                        pj.PJSIP_INV_STATE_NULL: "NULL",
+                        pj.PJSIP_INV_STATE_CALLING: "CALLING",
+                        pj.PJSIP_INV_STATE_INCOMING: "INCOMING",
+                        pj.PJSIP_INV_STATE_EARLY: "EARLY",
+                        pj.PJSIP_INV_STATE_CONNECTING: "CONNECTING",
+                        pj.PJSIP_INV_STATE_CONFIRMED: "CONFIRMED",
+                        pj.PJSIP_INV_STATE_DISCONNECTED: "DISCONNECTED"
+                    }
+                    state_name = state_names.get(ci.state, f"未知状态({ci.state})")
+                    
+                    logger.info(f"呼叫状态 [{i}秒]: {state_name}, 状态码: {ci.lastStatusCode}, 原因: {ci.lastReason}")
+                    
+                    # 如果通话已确认
+                    if ci.state == pj.PJSIP_INV_STATE_CONFIRMED:
+                        logger.info("通话已接通")
+                        break
                         
-                        # 如果遇到一些特定错误，则停止尝试
-                        if ci.state == pj.PJSIP_INV_STATE_DISCONNECTED and ci.lastStatusCode >= 400:
-                            logger.error(f"呼叫失败，状态码: {ci.lastStatusCode}, 原因: {ci.lastReason}")
-                            return False
-                    except Exception as e:
-                        logger.warning(f"检查呼叫状态时出错: {e}")
-                else:
-                    logger.info(f"呼叫状态 [{i}秒]: 呼叫不活跃")
-                
+                    # 如果通话已断开
+                    if ci.state == pj.PJSIP_INV_STATE_DISCONNECTED:
+                        logger.error(f"通话已断开: 状态码={ci.lastStatusCode}, 原因={ci.lastReason}")
+                        return False
+                except Exception as e:
+                    logger.warning(f"获取呼叫状态时出错: {e}")
+                    
                 time.sleep(1)
                 
-            return True
+            logger.info("呼叫过程完成")
+            return self.current_call and self.current_call.isActive()
                 
         except pj.Error as e:
             logger.error(f"拨打电话失败: {e}")

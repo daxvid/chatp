@@ -1,3 +1,4 @@
 /models
 /pyVoIP/__pycache__
 *.pyc
+auto_caller.log

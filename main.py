@@ -7,6 +7,7 @@ import edge_tts
 import traceback
 import signal
 import sys
+import pjsua2 as pj  # 确保正确导入
 from threading import Event
 
 from config_manager import ConfigManager
@@ -97,85 +98,64 @@ def main():
         logger.info(f"初始化SIP客户端: {sip_config['server']}:{sip_config['port']}")
         try:
             sip_caller = SIPCaller(sip_config)
+            logger.info("SIP客户端初始化成功")
         except Exception as e:
             logger.error(f"SIP客户端初始化失败: {e}")
             logger.error(f"请检查SIP服务器配置是否正确")
             return
         
         # 检查SIP客户端是否成功初始化
-        if not sip_caller or not hasattr(sip_caller, 'acc') or not sip_caller.acc:
+        if not sip_caller or not sip_caller.acc:
             logger.error("SIP客户端初始化不完整，无法进行呼叫")
             return
             
-        # 尝试使用不同格式的URI拨打测试号码
-        test_formats = [
-            "9196",  # 直接号码
-            "sip:9196",  # 简单SIP URI
-            f"sip:9196@{sip_config['server']}",  # 带域名的SIP URI
-            f"sip:9196@{sip_config['server']}:{sip_config['port']}"  # 带端口的SIP URI
-        ]
+        # 简化测试URI，只用最简单的一种格式
+        test_number = "13344445555"  # 使用测试号码
             
-        # 测试拨打回声测试号码
-        logger.info("开始拨号测试，尝试多种URI格式...")
+        # 测试拨打
+        logger.info(f"开始拨号测试: {test_number}")
         test_success = False
         
-        for i, test_uri in enumerate(test_formats):
-            if exit_event.is_set():
-                break
+        # 使用简单清晰的方式拨号
+        try:
+            # 使用直接号码，让SIP库自己处理URI格式
+            logger.info(f"尝试拨打测试号码: {test_number}")
+            test_result = sip_caller.make_call(test_number, None)
+            
+            if test_result:
+                logger.info(f"拨号测试成功!")
+                test_success = True
                 
-            logger.info(f"测试格式 {i+1}/{len(test_formats)}: {test_uri}")
-            try:
-                # 修改SIPCaller类的make_call方法，直接使用我们提供的URI
-                sip_caller._test_uri = test_uri  # 添加一个属性供调试使用
-                test_result = sip_caller.make_call(test_uri, None)
-                
-                if test_result:
-                    logger.info(f"使用格式 '{test_uri}' 拨号测试成功!")
-                    test_success = True
-                    
-                    # 等待几秒观察呼叫状态
-                    logger.info("等待10秒观察通话状态...")
-                    call_start_time = time.time()
-                    
-                    for j in range(10):
-                        if exit_event.is_set():
-                            break
-                            
-                        if sip_caller.current_call and sip_caller.current_call.isActive():
-                            try:
-                                ci = sip_caller.current_call.getInfo()
-                                logger.info(f"测试呼叫状态 [{j}秒]: 状态={ci.state}, 状态码={ci.lastStatusCode}")
-                                
-                                # 如果通话已连接超过5秒，可以提前结束测试
-                                if ci.state == pj.PJSIP_INV_STATE_CONFIRMED and time.time() - call_start_time > 5:
-                                    logger.info("通话已连接，测试成功，提前结束测试")
-                                    break
-                            except Exception as e:
-                                logger.warning(f"获取测试呼叫状态失败: {e}")
-                        else:
-                            logger.info(f"测试呼叫状态 [{j}秒]: 呼叫不活跃")
+                # 等待几秒观察呼叫状态
+                logger.info("等待5秒观察通话状态...")
+                for j in range(5):
+                    if exit_event.is_set():
+                        break
                         
-                        time.sleep(1)
+                    if sip_caller.current_call and sip_caller.current_call.isActive():
+                        try:
+                            ci = sip_caller.current_call.getInfo()
+                            logger.info(f"测试呼叫状态 [{j}秒]: {ci.state}")
+                        except Exception as e:
+                            logger.warning(f"获取测试呼叫状态失败: {e}")
+                    else:
+                        logger.info(f"测试呼叫状态 [{j}秒]: 呼叫不活跃")
                     
-                    # 挂断通话
-                    sip_caller.hangup()
-                    logger.info("测试通话已挂断")
-                    
-                    # 找到成功的格式后，记录并退出测试循环
-                    logger.info(f"成功的SIP URI格式: {test_uri}")
-                    break
-                else:
-                    logger.warning(f"使用格式 '{test_uri}' 拨号测试失败")
-            except Exception as e:
-                logger.error(f"使用格式 '{test_uri}' 拨号测试出错: {e}")
-                logger.debug(f"错误详情: {traceback.format_exc()}")
-            
-            # 确保上一次通话已结束
+                    time.sleep(1)
+                
+                # 挂断通话
+                sip_caller.hangup()
+                logger.info("测试通话已挂断")
+            else:
+                logger.warning(f"拨号测试失败")
+        except Exception as e:
+            logger.error(f"拨号测试出错: {e}")
+            logger.error(f"错误详情: {traceback.format_exc()}")
+        
+        # 确保测试通话已结束
+        if sip_caller.current_call:
             sip_caller.hangup()
-            time.sleep(2)  # 在尝试下一个格式前等待
-            
-        if not test_success:
-            logger.warning("所有拨号测试格式均失败，但将继续执行...")
+        time.sleep(2)  # 在进行下一步前等待
         
         # 初始化呼叫管理器
         logger.info("初始化呼叫管理器...")

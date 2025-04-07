@@ -2,3 +2,4 @@
 /pyVoIP/__pycache__
 *.pyc
 auto_caller.log
+call_log.csv

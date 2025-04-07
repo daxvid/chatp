@@ -1,8 +1,6 @@
-pjsua2==2.13.1
-openai-whisper==20231117
-scikit-learn==1.3.2
-edge-tts==6.1.9
-numpy==1.24.3
-python-dotenv==1.0.0
-pyyaml==6.0.1
-pyVoIP==2.0.0a4
+pjsua2
+openai-whisper==20240930
+edge-tts
+pyyaml
+scikit-learn
+numpy

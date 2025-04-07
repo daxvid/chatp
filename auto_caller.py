@@ -12,6 +12,11 @@ import logging
 import time
 import wave
 import threading
+from datetime import datetime
+import ssl
+
+# 禁用全局SSL证书验证
+ssl._create_default_https_context = ssl._create_unverified_context
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -48,32 +53,171 @@ def load_whisper_model():
         print(f"Loaded whisper model from {model_path}")
     except Exception as e:
         print(f"Error loading model from {model_path}: {e}")
-        print("Downloading model...")
-        model = whisper.load_model("small", download_root=str(model_dir))
-        print("Model downloaded successfully")
+        # 尝试禁用 SSL 验证后加载
+        try:
+            print("尝试禁用SSL验证后加载模型...")
+            model = whisper.load_model("small", download_root=str(model_dir))
+            print("Model downloaded successfully")
+        except Exception as e2:
+            print(f"仍然无法加载模型: {e2}")
+            # 提供一个备用方案
+            raise RuntimeError("无法加载语音识别模型，请确保网络连接或手动下载模型文件")
     
     return model
 
 class MyCall(pj.Call):
-    def __init__(self, acc, voice_file=None):
+    def __init__(self, acc, voice_file=None, whisper_model=None):
         pj.Call.__init__(self, acc)
         self.voice_file = voice_file
         self.voice_data = None
         self.voice_position = 0
+        self.recorder = None
+        self.recording_file = None
+        self.whisper_model = whisper_model
+        
+        # 如果没有传入模型且需要，尝试加载
+        if self.whisper_model is None:
+            # 尝试加载 whisper 模型，带错误处理
+            try:
+                logger.info("尝试加载 Whisper 模型...")
+                self.whisper_model = whisper.load_model("small")
+                logger.info("Whisper 模型加载成功")
+            except Exception as e:
+                logger.error(f"Whisper 模型加载失败: {e}")
+                self.whisper_model = None
+            
         if self.voice_file:
             self._load_voice_file()
 
     def _load_voice_file(self):
         """加载语音文件"""
         try:
+            # 检查文件扩展名
+            if self.voice_file.lower().endswith('.mp3'):
+                logger.info(f"检测到MP3文件: {self.voice_file}")
+                # MP3文件需要转换为WAV格式
+                self._convert_mp3_to_wav()
+                # 转换后的文件路径
+                self.voice_file = self.voice_file.rsplit('.', 1)[0] + '.wav'
+                
             with wave.open(self.voice_file, 'rb') as wf:
                 if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getframerate() != 8000:
-                    raise ValueError("语音文件必须是单声道、16位、8kHz采样率")
+                    logger.warning("语音文件不是单声道、16位、8kHz采样率，尝试转换...")
+                    self._convert_to_compatible_wav()
                 self.voice_data = wf.readframes(wf.getnframes())
                 logger.info(f"语音文件加载成功: {self.voice_file}")
         except Exception as e:
             logger.error(f"加载语音文件失败: {e}")
             self.voice_data = None
+            
+    def _convert_mp3_to_wav(self):
+        """将MP3文件转换为WAV格式"""
+        try:
+            import subprocess
+            output_wav = self.voice_file.rsplit('.', 1)[0] + '.wav'
+            
+            # 使用ffmpeg转换
+            cmd = [
+                'ffmpeg', '-y', 
+                '-i', self.voice_file, 
+                '-acodec', 'pcm_s16le', 
+                '-ar', '8000', 
+                '-ac', '1', 
+                output_wav
+            ]
+            
+            logger.info(f"转换MP3到WAV: {' '.join(cmd)}")
+            subprocess.run(cmd, check=True)
+            logger.info(f"MP3成功转换为WAV: {output_wav}")
+            
+        except Exception as e:
+            logger.error(f"MP3转换失败: {e}")
+            raise
+            
+    def _convert_to_compatible_wav(self):
+        """转换WAV文件为PJSIP兼容格式（单声道、16位、8kHz采样率）"""
+        try:
+            import subprocess
+            temp_file = self.voice_file + '.temp.wav'
+            
+            # 使用ffmpeg转换
+            cmd = [
+                'ffmpeg', '-y', 
+                '-i', self.voice_file, 
+                '-acodec', 'pcm_s16le', 
+                '-ar', '8000', 
+                '-ac', '1', 
+                temp_file
+            ]
+            
+            logger.info(f"转换WAV为兼容格式: {' '.join(cmd)}")
+            subprocess.run(cmd, check=True)
+            
+            # 替换原始文件
+            import os
+            os.rename(temp_file, self.voice_file)
+            logger.info(f"WAV文件已转换为兼容格式: {self.voice_file}")
+            
+        except Exception as e:
+            logger.error(f"WAV格式转换失败: {e}")
+            raise
+
+    def start_recording(self, phone_number):
+        """开始录音"""
+        try:
+            # 创建录音文件名：电话号码+时间戳
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.recording_file = f"recordings/{phone_number}_{timestamp}.wav"
+            
+            # 确保录音目录存在
+            os.makedirs("recordings", exist_ok=True)
+            
+            # 创建录音器
+            self.recorder = pj.AudioMediaRecorder()
+            self.recorder.createRecorder(self.recording_file)
+            
+            # 开始录音
+            self.getAudioVideoStream()[0].startTransmit(self.recorder)
+            logger.info(f"开始录音: {self.recording_file}")
+        except pj.Error as e:
+            logger.error(f"开始录音失败: {e}")
+
+    def stop_recording(self):
+        """停止录音"""
+        try:
+            if self.recorder:
+                self.getAudioVideoStream()[0].stopTransmit(self.recorder)
+                self.recorder = None
+                logger.info("停止录音")
+        except pj.Error as e:
+            logger.error(f"停止录音失败: {e}")
+
+    def transcribe_audio(self):
+        """使用Whisper转录音频"""
+        try:
+            if not self.whisper_model:
+                logger.error("Whisper模型未加载，无法进行语音识别")
+                return None
+                
+            if self.recording_file and os.path.exists(self.recording_file):
+                logger.info(f"开始转录音频: {self.recording_file}")
+                # 检查文件大小，确保不是空文件
+                if os.path.getsize(self.recording_file) < 1000:  # 小于1KB的文件可能有问题
+                    logger.warning(f"录音文件过小，可能没有录到声音: {self.recording_file}")
+                
+                try:
+                    result = self.whisper_model.transcribe(self.recording_file)
+                    logger.info(f"语音识别结果: {result['text']}")
+                    return result['text']
+                except Exception as e:
+                    logger.error(f"语音识别处理失败: {e}")
+                    return None
+            else:
+                logger.warning(f"录音文件不存在: {self.recording_file}")
+            return None
+        except Exception as e:
+            logger.error(f"语音识别失败: {e}")
+            return None
 
     def onCallState(self, prm):
         """处理通话状态变化"""
@@ -89,10 +233,18 @@ class MyCall(pj.Call):
                     player.createPlayer(self.voice_file)
                     # 连接到通话
                     player.startTransmit(self.getAudioVideoStream()[0])
+                    
+                    # 开始录音
+                    self.start_recording(prm.remoteUri)
                 except pj.Error as e:
                     logger.error(f"播放语音失败: {e}")
         elif ci.state == pj.PJSIP_INV_STATE_DISCONNECTED:
             logger.info("通话已结束")
+            # 停止录音
+            self.stop_recording()
+            # 转录音频
+            if self.recording_file:
+                self.transcribe_audio()
 
 class AutoCaller:
     def __init__(self, config_path='config.yaml'):
@@ -100,6 +252,22 @@ class AutoCaller:
         self.ep = None
         self.acc = None
         self.current_call = None
+        self.whisper_model = None
+        self.tts_cache_dir = "tts_cache"
+        
+        # 创建TTS缓存目录
+        os.makedirs(self.tts_cache_dir, exist_ok=True)
+        
+        # 预先加载 Whisper 模型
+        try:
+            logger.info("正在加载 Whisper 语音识别模型...")
+            self.whisper_model = whisper.load_model("small")
+            logger.info("Whisper 模型加载成功")
+        except Exception as e:
+            logger.error(f"无法加载 Whisper 模型: {e}")
+            logger.warning("语音识别功能将不可用，但拨号功能可以正常使用")
+        
+        # 初始化PJSIP
         self._init_pjsua2()
 
     def _load_config(self, config_path):
@@ -120,6 +288,8 @@ class AutoCaller:
 
             # 初始化库
             ep_cfg = pj.EpConfig()
+            # 禁用SSL证书验证
+            ep_cfg.uaConfig.verifyServerCert = False
             self.ep.libInit(ep_cfg)
 
             # 创建传输
@@ -164,13 +334,29 @@ class AutoCaller:
                 logger.warning("已有通话在进行中")
                 return False
 
+            # 清理号码中可能的特殊字符
+            clean_number = ''.join(c for c in number if c.isdigit() or c in ['+', '*', '#'])
+            
             # 构建SIP URI
-            sip_uri = f"sip:{number}@{self.config['sip']['server']}:{self.config['sip']['port']}"
+            sip_uri = f"sip:{clean_number}@{self.config['sip']['server']}:{self.config['sip']['port']}"
             logger.info(f"正在拨打: {sip_uri}")
+            
+            # 添加更多调试信息
+            logger.info(f"服务器信息: {self.config['sip']['server']}:{self.config['sip']['port']}")
+            logger.info(f"账户信息: {self.config['sip']['username']}")
+            
+            # 打印当前网络连接信息
+            try:
+                import socket
+                host_ip = socket.gethostbyname(socket.gethostname())
+                logger.info(f"本机IP: {host_ip}")
+            except Exception as e:
+                logger.warning(f"获取本机IP失败: {e}")
 
             # 创建通话
-            call = MyCall(self.acc, voice_file)
+            call = MyCall(self.acc, voice_file, self.whisper_model)
             call_prm = pj.CallOpParam()
+            logger.info("开始拨号...")
             call.makeCall(sip_uri, call_prm)
             
             self.current_call = call
@@ -179,6 +365,14 @@ class AutoCaller:
                 
         except pj.Error as e:
             logger.error(f"拨打电话失败: {e}")
+            # 输出详细错误信息
+            if hasattr(e, 'status') and hasattr(e, 'reason'):
+                logger.error(f"SIP错误状态: {e.status}, 原因: {e.reason}")
+            return False
+        except Exception as e:
+            logger.error(f"拨号过程中发生未知错误: {e}")
+            import traceback
+            logger.error(f"错误详情: {traceback.format_exc()}")
             return False
 
     def hangup(self):
@@ -201,39 +395,171 @@ class AutoCaller:
         """停止PJSIP"""
         try:
             if self.acc:
-                self.acc.delete()
+                try:
+                    # 使用正确的方法删除账户
+                    self.acc.setRegistration(False)
+                    time.sleep(1)  # 等待注销完成
+                    self.acc = None
+                except Exception as e:
+                    logger.warning(f"删除账户时出错: {e}")
+                    self.acc = None
             if self.ep:
-                self.ep.libDestroy()
+                try:
+                    self.ep.libDestroy()
+                except Exception as e:
+                    logger.warning(f"销毁PJSIP库时出错: {e}")
+                    self.ep = None
             logger.info("SIP服务已停止")
-        except pj.Error as e:
+        except Exception as e:
             logger.error(f"停止SIP服务失败: {e}")
+            self.acc = None
+            self.ep = None
+
+    async def generate_tts(self, text, voice="zh-CN-XiaoxiaoNeural"):
+        """使用edge-tts生成语音文件"""
+        try:
+            # 创建文件名（使用文本的哈希值）
+            import hashlib
+            text_hash = hashlib.md5(text.encode()).hexdigest()
+            mp3_path = os.path.join(self.tts_cache_dir, f"{text_hash}_{voice}.mp3")
+            wav_path = os.path.join(self.tts_cache_dir, f"{text_hash}_{voice}.wav")
+            
+            # 如果已经生成过，直接返回
+            if os.path.exists(wav_path):
+                logger.info(f"使用缓存的TTS文件: {wav_path}")
+                return wav_path
+                
+            # 生成语音
+            logger.info(f"正在使用edge-tts生成语音: '{text}'")
+            communicate = edge_tts.Communicate(text, voice)
+            await communicate.save(mp3_path)
+            logger.info(f"TTS生成成功: {mp3_path}")
+            
+            # 转换为WAV格式
+            self._convert_mp3_to_wav_file(mp3_path, wav_path)
+            
+            return wav_path
+        except Exception as e:
+            logger.error(f"TTS生成失败: {e}")
+            import traceback
+            logger.error(f"详细错误: {traceback.format_exc()}")
+            return None
+            
+    def _convert_mp3_to_wav_file(self, mp3_file, wav_file):
+        """将MP3文件转换为PJSIP兼容的WAV格式"""
+        try:
+            import subprocess
+            
+            # 使用ffmpeg转换
+            cmd = [
+                'ffmpeg', '-y', 
+                '-i', mp3_file, 
+                '-acodec', 'pcm_s16le', 
+                '-ar', '8000', 
+                '-ac', '1', 
+                wav_file
+            ]
+            
+            logger.info(f"转换MP3到WAV: {' '.join(cmd)}")
+            subprocess.run(cmd, check=True)
+            logger.info(f"MP3成功转换为WAV: {wav_file}")
+            
+        except Exception as e:
+            logger.error(f"MP3转换失败: {e}")
             raise
+    
+    def make_call_with_text(self, number: str, text: str, voice="zh-CN-XiaoxiaoNeural"):
+        """使用文本生成语音并拨打电话"""
+        # 使用同步函数运行异步TTS生成
+        try:
+            # 运行异步函数
+            wav_file = asyncio.run(self.generate_tts(text, voice))
+            if not wav_file:
+                logger.error("TTS生成失败，无法拨打电话")
+                return False
+                
+            # 拨打电话并播放生成的语音
+            return self.make_call(number, wav_file)
+        except Exception as e:
+            logger.error(f"使用TTS拨打电话失败: {e}")
+            import traceback
+            logger.error(f"详细错误: {traceback.format_exc()}")
+            return False
 
 def main():
+    caller = None
     try:
+        logger.info("正在启动自动拨号系统...")
+        
         # 创建自动拨号器实例
         caller = AutoCaller()
         
-        # 从配置文件获取目标号码和语音文件
+        # 从配置文件获取目标号码和语音相关配置
         target_number = caller.config['sip'].get('target_number')
+        tts_text = caller.config['sip'].get('tts_text')
+        tts_voice = caller.config['sip'].get('tts_voice', 'zh-CN-XiaoxiaoNeural')
         voice_file = caller.config['sip'].get('voice_file')
         
         if not target_number:
             logger.error("配置文件中未指定目标号码")
             return
-            
-        # 拨打电话
-        if caller.make_call(target_number, voice_file):
-            # 等待通话结束
+        
+        logger.info(f"配置加载成功，准备拨打电话到: {target_number}")
+        
+        # 优先使用TTS文本，如果没有则使用预设的语音文件
+        if tts_text:
+            logger.info(f"使用TTS生成语音: '{tts_text}'")
+            result = caller.make_call_with_text(target_number, tts_text, tts_voice)
+        elif voice_file:
+            # 检查文件是否存在
+            if not os.path.exists(voice_file):
+                logger.error(f"语音文件不存在: {voice_file}")
+                return
+                
+            file_ext = os.path.splitext(voice_file)[1].lower()
+            if file_ext == '.mp3':
+                logger.info(f"将播放MP3文件: {voice_file}")
+            elif file_ext == '.wav':
+                logger.info(f"将播放WAV文件: {voice_file}")
+            else:
+                logger.error(f"不支持的音频格式: {file_ext}，支持的格式：.mp3, .wav")
+                return
+                
+            result = caller.make_call(target_number, voice_file)
+        else:
+            logger.error("配置文件中既没有指定TTS文本也没有指定语音文件")
+            return
+        
+        # 等待通话结束
+        if result:
+            logger.info("拨号成功，等待通话结束...")
             while caller.current_call:
                 time.sleep(1)
+            logger.info("通话已结束")
+        else:
+            logger.error("拨号失败")
+        
+    except pj.Error as e:
+        logger.error(f"PJSUA2错误: {e}")
+        # 输出详细的错误信息
+        if hasattr(e, 'status') and hasattr(e, 'reason'):
+            logger.error(f"SIP错误状态: {e.status}, 原因: {e.reason}")
+        
+    except ssl.SSLError as e:
+        logger.error(f"SSL证书验证错误: {e}")
+        logger.info("请尝试在系统级别禁用SSL证书验证，或者修改SSL证书配置")
         
     except Exception as e:
         logger.error(f"程序运行出错: {e}")
+        import traceback
+        logger.error(f"错误详情: {traceback.format_exc()}")
+        
     finally:
         # 确保服务被正确停止
-        if 'caller' in locals():
+        logger.info("正在清理资源...")
+        if caller:
             caller.stop()
+        logger.info("程序结束")
 
 if __name__ == "__main__":
     main() 

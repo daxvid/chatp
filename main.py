@@ -108,55 +108,9 @@ def main():
         if not sip_caller or not sip_caller.acc:
             logger.error("SIP客户端初始化不完整，无法进行呼叫")
             return
-            
-        # 简化测试URI，只用最简单的一种格式
-        test_number = "13344445555"  # 使用测试号码
-            
-        # 测试拨打
-        logger.info(f"开始拨号测试: {test_number}")
-        test_success = False
-        
-        # 使用简单清晰的方式拨号
-        try:
-            # 使用直接号码，让SIP库自己处理URI格式
-            logger.info(f"尝试拨打测试号码: {test_number}")
-            test_result = sip_caller.make_call(test_number, None)
-            
-            if test_result:
-                logger.info(f"拨号测试成功!")
-                test_success = True
-                
-                # 等待几秒观察呼叫状态
-                logger.info("等待5秒观察通话状态...")
-                for j in range(5):
-                    if exit_event.is_set():
-                        break
-                        
-                    if sip_caller.current_call and sip_caller.current_call.isActive():
-                        try:
-                            ci = sip_caller.current_call.getInfo()
-                            logger.info(f"测试呼叫状态 [{j}秒]: {ci.state}")
-                        except Exception as e:
-                            logger.warning(f"获取测试呼叫状态失败: {e}")
-                    else:
-                        logger.info(f"测试呼叫状态 [{j}秒]: 呼叫不活跃")
-                    
-                    time.sleep(1)
-                
-                # 挂断通话
-                sip_caller.hangup()
-                logger.info("测试通话已挂断")
-            else:
-                logger.warning(f"拨号测试失败")
-        except Exception as e:
-            logger.error(f"拨号测试出错: {e}")
-            logger.error(f"错误详情: {traceback.format_exc()}")
-        
-        # 确保测试通话已结束
-        if sip_caller.current_call:
-            sip_caller.hangup()
-        time.sleep(2)  # 在进行下一步前等待
-        
+
+        # test_call(sip_caller)
+
         # 初始化呼叫管理器
         logger.info("初始化呼叫管理器...")
         call_manager = CallManager(sip_caller, tts_manager, whisper_manager)
@@ -223,6 +177,54 @@ def main():
             logger.info("正在清理资源...")
             sip_caller.stop()
             logger.info("SIP服务已停止")
-            
+
+
+def test_call(sip_caller):
+    # 简化测试URI，只用最简单的一种格式
+    test_number = "13344445555"  # 使用测试号码
+    # 测试拨打
+    logger.info(f"开始拨号测试: {test_number}")
+    test_success = False
+    # 使用简单清晰的方式拨号
+    try:
+        # 使用直接号码，让SIP库自己处理URI格式
+        logger.info(f"尝试拨打测试号码: {test_number}")
+        test_result = sip_caller.make_call(test_number, None)
+
+        if test_result:
+            logger.info(f"拨号测试成功!")
+            test_success = True
+
+            # 等待几秒观察呼叫状态
+            logger.info("等待5秒观察通话状态...")
+            for j in range(5):
+                if exit_event.is_set():
+                    break
+
+                if sip_caller.current_call and sip_caller.current_call.isActive():
+                    try:
+                        ci = sip_caller.current_call.getInfo()
+                        logger.info(f"测试呼叫状态 [{j}秒]: {ci.state}")
+                    except Exception as e:
+                        logger.warning(f"获取测试呼叫状态失败: {e}")
+                else:
+                    logger.info(f"测试呼叫状态 [{j}秒]: 呼叫不活跃")
+
+                time.sleep(1)
+
+            # 挂断通话
+            sip_caller.hangup()
+            logger.info("测试通话已挂断")
+        else:
+            logger.warning(f"拨号测试失败")
+    except Exception as e:
+        logger.error(f"拨号测试出错: {e}")
+        logger.error(f"错误详情: {traceback.format_exc()}")
+    # 确保测试通话已结束
+    if sip_caller.current_call:
+        sip_caller.hangup()
+    time.sleep(2)  # 在进行下一步前等待
+
+
 if __name__ == "__main__":
     main() 

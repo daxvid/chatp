@@ -3,3 +3,4 @@
 *.pyc
 auto_caller.log
 call_log.csv
+/.idea

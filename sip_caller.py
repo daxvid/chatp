@@ -4,6 +4,7 @@ import os
 import wave
 import logging
 import ssl
+import random
 from datetime import datetime
 
 # 禁用SSL证书验证
@@ -300,7 +301,10 @@ class SIPCaller:
 
             # 创建传输
             sipTpConfig = pj.TransportConfig()
-            sipTpConfig.port = self.config.get('bind_port', 5060)
+            if self.config.get('bind_port'):
+                sipTpConfig.port = self.config.get('bind_port', 5060)
+            else:
+                sipTpConfig.port = random.randint(6000, 8000)
             
             # 指定本地IP（如果配置中有）
             if self.config.get('bind_ip'):

@@ -14,13 +14,14 @@ logger = logging.getLogger("sip")
 
 class SIPCall(pj.Call):
     """SIP通话类，继承自pjsua2.Call"""
-    def __init__(self, acc, voice_file=None, whisper_model=None):
+    def __init__(self, acc, voice_file=None, whisper_model=None, phone_number=None):
         pj.Call.__init__(self, acc)
         self.voice_file = voice_file
         self.voice_data = None
         self.recorder = None
         self.recording_file = None
         self.whisper_model = whisper_model
+        self.phone_number = phone_number
         
         if self.voice_file:
             self._load_voice_file()
@@ -238,8 +239,11 @@ class SIPCall(pj.Call):
                         # 开始录音
                         if prm and hasattr(prm, 'remoteUri') and prm.remoteUri:
                             self.start_recording(prm.remoteUri)
+                        elif self.phone_number:
+                            logger.info(f"使用预设电话号码进行录音: {self.phone_number}")
+                            self.start_recording(self.phone_number)
                         else:
-                            logger.warning("缺少远程URI信息，使用未知号码录音")
+                            logger.warning("缺少远程URI信息和预设号码，使用未知号码录音")
                             self.start_recording("unknown")
                             
                     except Exception as e:
@@ -452,8 +456,8 @@ class SIPCaller:
             if voice_file:
                 logger.info(f"语音文件: {voice_file}")
             
-            # 创建通话
-            call = SIPCall(self.acc, voice_file, self.whisper_model)
+            # 创建通话对象，并传入电话号码
+            call = SIPCall(self.acc, voice_file, self.whisper_model, number)
             
             # 设置呼叫参数
             call_prm = pj.CallOpParam(True)  # 使用默认值

@@ -680,7 +680,7 @@ class MyAudioMediaPort(pj.AudioMediaPort):
         self.buffer = bytearray()
         self.buffer_size = 0
         self.last_transcription_time = 0
-        self.chunk_duration = 3  # 每个音频块的秒数
+        self.chunk_duration = 2  # 缩短每个音频块的秒数，提高实时性
         self.sample_rate = 8000
         self.bytes_per_sample = 2  # 16位PCM
         self.transcription_thread = None
@@ -692,6 +692,8 @@ class MyAudioMediaPort(pj.AudioMediaPort):
         self.speech_ended = False  # 对方是否说完第一句话
         self.should_play_response = False  # 是否应该播放回复
         self.last_speech_time = 0  # 上次检测到语音结束的时间
+        self.process_lock = threading.Lock()  # 添加锁以避免线程冲突
+        self.accumulated_speech = ""  # 累积的语音识别结果
         
         # 创建转录文件夹
         os.makedirs(self.realtime_chunks_dir, exist_ok=True)
@@ -767,12 +769,33 @@ class MyAudioMediaPort(pj.AudioMediaPort):
         try:
             # 主循环
             while self.transcription_active:
-                # 检查是否有足够的数据进行转录
-                current_time = time.time()
-                if current_time - self.last_transcription_time >= self.chunk_duration:
-                    # 转录当前数据块
-                    self._transcribe_current_buffer()
-                    self.last_transcription_time = current_time
+                with self.process_lock:
+                    # 检查是否有足够的数据进行转录
+                    current_time = time.time()
+                    if current_time - self.last_transcription_time >= self.chunk_duration and self.buffer_size > 1000:
+                        # 转录当前数据块
+                        self._process_buffer_directly()
+                        self.last_transcription_time = current_time
+                    
+                    # 检查是否为静音
+                    elif self.has_detected_speech and not self.speech_ended:
+                        if current_time - self.last_sound_time > self.silence_duration:
+                            logger.info("检测到对方说话结束")
+                            self.speech_ended = True
+                            self.last_speech_time = current_time
+                            self.should_play_response = True
+                            
+                            # 最后一次转录，确保捕获所有内容
+                            if self.buffer_size > 0:
+                                self._process_buffer_directly()
+                            
+                            # 输出完整的转录结果
+                            if self.accumulated_speech:
+                                logger.info(f"完整转录结果: {self.accumulated_speech}")
+                            
+                            # 通知SIPCall对象播放回复
+                            if self.call and hasattr(self.call, "play_response_after_speech"):
+                                threading.Thread(target=self.call.play_response_after_speech, daemon=True).start()
                 
                 time.sleep(0.1)  # 减少CPU使用
                 
@@ -784,20 +807,9 @@ class MyAudioMediaPort(pj.AudioMediaPort):
             self.transcription_active = False
             logger.info("音频处理循环已结束")
     
-    def _transcribe_current_buffer(self):
-        """转录当前缓冲区中的音频数据"""
+    def _process_buffer_directly(self):
+        """直接处理当前缓冲区中的音频数据进行转录，完全在内存中进行"""
         if not self.buffer or self.buffer_size < 1000:  # 小于1000字节的数据可能没有有用信息
-            # 检查是否为静音
-            if self.has_detected_speech and not self.speech_ended:
-                current_time = time.time()
-                if current_time - self.last_sound_time > self.silence_duration:
-                    logger.info("检测到对方说话结束")
-                    self.speech_ended = True
-                    self.last_speech_time = current_time
-                    self.should_play_response = True
-                    # 通知SIPCall对象播放回复
-                    if self.call and hasattr(self.call, "play_response_after_speech"):
-                        threading.Thread(target=self.call.play_response_after_speech, daemon=True).start()
             return
             
         try:
@@ -807,30 +819,43 @@ class MyAudioMediaPort(pj.AudioMediaPort):
                 self.has_detected_speech = True
                 logger.info("检测到对方开始说话")
             
-            # 创建临时WAV文件
-            timestamp = int(time.time())
-            temp_wav = os.path.join(self.realtime_chunks_dir, f"chunk_{timestamp}.wav")
-            
-            # 写入WAV文件
-            with wave.open(temp_wav, 'wb') as wf:
-                wf.setnchannels(1)  # 单声道
-                wf.setsampwidth(2)  # 16位
-                wf.setframerate(self.sample_rate)  # 8000Hz
-                wf.writeframes(bytes(self.buffer))
+            # 使用Whisper实时转录
+            if self.whisper_model:
+                # 创建内存中的音频数据，无需写入临时文件
+                import io
+                import numpy as np
                 
-            # 清空缓冲区
+                # 将PCM数据转换为numpy数组
+                audio_data = np.frombuffer(bytes(self.buffer), dtype=np.int16)
+                
+                # 转换为float32并归一化到[-1, 1]区间
+                audio_float = audio_data.astype(np.float32) / 32768.0
+                
+                # 如果需要，可以在这里进行一些预处理，如降噪、音量归一化等
+                
+                # 调用Whisper API直接处理内存中的音频数据
+                result = self.whisper_model.transcribe(audio_float, sampling_rate=self.sample_rate)
+                text = result.get('text', '').strip()
+                    
+                if text:
+                    logger.info(f"实时转录片段: {text}")
+                    # 累积转录结果
+                    if self.accumulated_speech:
+                        self.accumulated_speech += " " + text
+                    else:
+                        self.accumulated_speech = text
+            
+            # 清空缓冲区，准备接收新的音频数据
             self.buffer = bytearray()
             self.buffer_size = 0
-            
-            # 使用Whisper转录
-            if self.whisper_model:
-                result = self.whisper_model.transcribe(temp_wav)
-                text = result.get('text', '').strip()
-                if text:
-                    logger.info(f"实时转录: {text}")
-                    # 这里可以添加后续处理，如将转录文本发送到外部系统等
+                
         except Exception as e:
-            logger.error(f"转录音频数据时出错: {e}")
+            logger.error(f"实时转录处理出错: {e}")
+            import traceback
+            logger.error(f"详细错误: {traceback.format_exc()}")
+            # 出错时也清空缓冲区，避免数据堆积
+            self.buffer = bytearray()
+            self.buffer_size = 0
     
     def onFrameRequested(self, frame):
         """当需要音频帧时调用（源）"""
@@ -847,9 +872,14 @@ class MyAudioMediaPort(pj.AudioMediaPort):
             frame_data = frame.buf
             frame_len = frame.size
             
-            # 将帧数据添加到缓冲区
-            self.buffer.extend(frame_data[:frame_len])
-            self.buffer_size += frame_len
+            # 检查是否有足够的数据进行处理
+            if frame_len <= 0:
+                return
+                
+            with self.process_lock:
+                # 将帧数据添加到缓冲区
+                self.buffer.extend(frame_data[:frame_len])
+                self.buffer_size += frame_len
             
         except Exception as e:
             logger.error(f"处理接收到的音频帧时出错: {e}")

@@ -23,7 +23,7 @@ except ImportError:
         def __init__(self, config=None):
             self.config = config or {}
             self.tts_voice = self.config.get('tts_voice', 'zh-CN-XiaoxiaoNeural')
-            self.tts_dir = "tts_files"
+            self.tts_dir = "tts_cache"
             os.makedirs(self.tts_dir, exist_ok=True)
             
         async def _generate_speech_async(self, text, output_file, voice=None):
@@ -34,14 +34,26 @@ except ImportError:
         def generate_speech(self, text, output_file=None, voice=None):
             """生成语音文件"""
             import asyncio
+            import hashlib
             
+            # 使用当前指定的voice或默认voice
+            voice = voice or self.tts_voice
+            
+            # 如果未指定输出文件，根据文本和语音生成MD5哈希作为文件名
             if not output_file:
-                # 生成默认文件名
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                output_file = os.path.join(self.tts_dir, f"tts_{timestamp}.wav")
+                # 组合文本和语音，确保相同文本不同语音也能区分
+                hash_content = f"{text}_{voice}".encode('utf-8')
+                file_hash = hashlib.md5(hash_content).hexdigest()
+                output_file = os.path.join(self.tts_dir, f"{file_hash}.wav")
+            
+            # 检查是否存在缓存文件
+            if os.path.exists(output_file):
+                logger.info(f"使用缓存的语音文件: {output_file}")
+                return output_file
                 
-            # 运行异步函数
+            # 运行异步函数生成语音
             asyncio.run(self._generate_speech_async(text, output_file, voice))
+            logger.info(f"语音生成成功并缓存: {output_file}")
             return output_file
 
 # 禁用SSL证书验证
@@ -62,6 +74,8 @@ class SIPCall(pj.Call):
         self.phone_number = phone_number
         self.audio_port = None
         self.has_played_response = False
+        self.tts_manager = None
+        self.response_configs = None
         
         if self.voice_file:
             self._load_voice_file()
@@ -373,7 +387,8 @@ class SIPCall(pj.Call):
                         self.audio_port = MyAudioMediaPort(
                             self.whisper_model, 
                             self,
-                            self.response_configs if hasattr(self, 'response_configs') else None
+                            self.response_configs if hasattr(self, 'response_configs') else None,
+                            self.tts_manager if hasattr(self, 'tts_manager') else None
                         )
                         # 启动实时转录
                         if self.audio_port.start_realtime_transcription(self):
@@ -627,21 +642,16 @@ class SIPCaller:
                 return False
                 
             # 如果未指定响应语音文件，且config中有tts_text，则生成语音文件
-            if not response_voice_file and 'tts_text' in self.config:
+            if not response_voice_file and 'tts_text' in self.config:                
                 try:
                     # 使用TTS管理器生成语音
                     tts_text = self.config['tts_text']
-                    logger.info(f"从config.yaml中的tts_text生成语音文件")
-                    logger.info(f"文本: {tts_text}")
+                    logger.info(f"从config.yaml中的tts_text生成语音文件: {tts_text}")
                     
-                    # 生成文件名
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    tts_file = os.path.join("tts_files", f"initial_greeting_{timestamp}.wav")
-                    
-                    # 生成语音
-                    tts_file = self.tts_manager.generate_speech(tts_text, tts_file)
-                    logger.info(f"TTS语音生成成功: {tts_file}")
-                    response_voice_file = tts_file
+                    # 使用TTS管理器生成语音
+                    tts_voice = self.config.get('tts_voice', 'zh-CN-XiaoxiaoNeural')
+                    response_voice_file = self.tts_manager.generate_speech(tts_text, voice=tts_voice)
+                    logger.info(f"TTS语音生成成功: {response_voice_file}")
                 except Exception as e:
                     logger.error(f"TTS语音生成失败: {e}")
                     import traceback
@@ -670,6 +680,9 @@ class SIPCaller:
             
             # 创建通话对象，并传入电话号码和响应语音文件
             call = SIPCall(self.acc, voice_file, self.whisper_model, number, response_voice_file)
+            # 传递tts_manager和response_configs到通话对象
+            call.tts_manager = self.tts_manager
+            call.response_configs = self.response_configs
             
             # 设置呼叫参数
             call_prm = pj.CallOpParam(True)  # 使用默认值
@@ -779,7 +792,7 @@ class SIPCaller:
 
 class MyAudioMediaPort(pj.AudioMediaPort):
     """自定义音频媒体端口类，用于实时转录"""
-    def __init__(self, whisper_model=None, call=None, response_configs=None):
+    def __init__(self, whisper_model=None, call=None, response_configs=None, tts_manager=None):
         pj.AudioMediaPort.__init__(self)
         self.whisper_model = whisper_model
         self.realtime_chunks_dir = "realtime_chunks"
@@ -813,6 +826,7 @@ class MyAudioMediaPort(pj.AudioMediaPort):
         self.last_segment_time = 0  # 最后一个片段的处理时间
         self.force_process_interval = 3.0  # 强制处理间隔，即使数据很少也会每隔这个时间处理一次
         self.intermediate_results = True  # 是否输出中间结果
+        self.tts_manager = tts_manager  # TTS管理器引用
         
         # 创建转录文件夹
         os.makedirs(self.realtime_chunks_dir, exist_ok=True)
@@ -1142,39 +1156,24 @@ class MyAudioMediaPort(pj.AudioMediaPort):
                     response_text = "谢谢您的来电，我们已收到您的信息。"
                     logger.info(f"使用系统默认回复: {response_text}")
             
-            # 使用TTS管理器生成语音
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            tts_file = os.path.join("tts_files", f"response_{timestamp}.wav")
-            
             # 设置TTS参数
             tts_voice = self.response_configs.get('tts_voice', 'zh-CN-XiaoxiaoNeural')
             
-            # 生成语音
-            if hasattr(self.call, 'tts_manager') and self.call.tts_manager:
-                # 如果通话对象有自己的TTS管理器，使用它
-                tts_file = self.call.tts_manager.generate_speech(response_text, tts_file, tts_voice)
-            elif hasattr(self, 'tts_manager') and self.tts_manager:
-                # 否则使用自己的TTS管理器
-                tts_file = self.tts_manager.generate_speech(response_text, tts_file, tts_voice)
-            else:
-                # 如果没有TTS管理器，使用直接方法
-                logger.warning("未找到TTS管理器，使用直接方法生成语音")
-                from edge_tts import Communicate
-                import asyncio
+            # 获取TTS管理器
+            tts_manager = None
+            if hasattr(self, 'tts_manager') and self.tts_manager:
+                tts_manager = self.tts_manager
+            elif hasattr(self.call, 'tts_manager') and self.call.tts_manager:
+                tts_manager = self.call.tts_manager
                 
-                # 创建临时目录用于存放生成的语音
-                tts_dir = "tts_files"
-                os.makedirs(tts_dir, exist_ok=True)
-                
-                # 异步生成语音
-                async def generate_speech():
-                    communicate = Communicate(response_text, tts_voice)
-                    await communicate.save(tts_file)
-                
-                # 运行异步函数
-                asyncio.run(generate_speech())
+            if not tts_manager:
+                logger.warning("未找到TTS管理器，使用默认方法生成语音")
+                # 创建临时TTS管理器
+                tts_manager = TTSManager({'tts_voice': tts_voice})
             
-            logger.info(f"TTS语音生成成功: {tts_file}")
+            # 使用TTS管理器生成语音
+            tts_file = tts_manager.generate_speech(response_text, voice=tts_voice)
+            logger.info(f"生成响应语音: {tts_file}")
             
             # 设置生成的语音文件为响应语音
             if self.call:

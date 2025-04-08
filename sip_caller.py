@@ -255,6 +255,30 @@ class SIPCall(pj.Call):
             import traceback
             logger.error(f"详细错误: {traceback.format_exc()}")
     
+    def onCallMediaState(self, prm):
+        """媒体状态改变时的回调函数"""
+        logger.info("媒体状态已改变")
+        try:
+            # 检查是否有音频媒体
+            try:
+                audio_media = self.getAudioMedia(-1)
+                logger.info("成功获取音频媒体")
+                
+                # 如果已经创建了音频端口，连接它
+                if hasattr(self, 'audio_port') and self.audio_port:
+                    logger.info("连接音频媒体到转录端口")
+                    audio_media.startTransmit(self.audio_port)
+                    logger.info("音频媒体已连接到转录端口")
+            except Exception as e:
+                logger.error(f"处理音频媒体时出错: {e}")
+                import traceback
+                logger.error(f"详细错误: {traceback.format_exc()}")
+                
+        except Exception as e:
+            logger.error(f"处理媒体状态变化时出错: {e}")
+            import traceback
+            logger.error(f"详细错误: {traceback.format_exc()}")
+
     def onCallState(self, prm):
         """呼叫状态改变时的回调函数"""
         try:
@@ -320,6 +344,18 @@ class SIPCall(pj.Call):
                 # 停止实时转录
                 try:
                     if hasattr(self, 'audio_port') and self.audio_port:
+                        # 在主线程中安全断开连接
+                        try:
+                            # 获取音频媒体对象
+                            audio_media = self.getAudioMedia(-1)
+                            # 停止传输
+                            if audio_media:
+                                audio_media.stopTransmit(self.audio_port)
+                                logger.info("音频媒体传输已停止")
+                        except Exception as e:
+                            logger.error(f"停止音频传输时出错: {e}")
+                            
+                        # 停止转录线程
                         self.audio_port.transcription_active = False
                         logger.info("实时语音转录已停止")
                 except Exception as e:
@@ -704,28 +740,19 @@ class MyAudioMediaPort(pj.AudioMediaPort):
             return False
         
         try:
-            # 直接获取音频媒体，而不尝试检查媒体数量
-            logger.info("尝试获取通话的音频媒体...")
-            try:
-                # 使用getAudioMedia方法直接获取音频媒体
-                audio_media = call.getAudioMedia(-1)  # -1表示第一个可用的音频媒体
-                
-                if audio_media:
-                    logger.info("成功获取音频媒体，开始转录")
-                    # 启动转录线程
-                    self.transcription_thread = threading.Thread(
-                        target=self._realtime_transcription_loop,
-                        args=(audio_media,),
-                        daemon=True
-                    )
-                    self.transcription_thread.start()
-                    return True
-                else:
-                    logger.error("获取到的音频媒体无效")
-            except Exception as e:
-                logger.error(f"获取音频媒体失败: {e}")
-                import traceback
-                logger.error(f"详细错误: {traceback.format_exc()}")
+            # 不使用音频媒体直接传输，而是在回调中注册本地回调来处理
+            logger.info("已启用实时转录，将在音频回调中处理数据...")
+            
+            # 启动处理线程
+            self.transcription_thread = threading.Thread(
+                target=self._process_audio_data_loop,
+                daemon=True
+            )
+            self.transcription_thread.start()
+            
+            # 注册通话中音频数据的回调处理，在onCallMediaState中实现
+            logger.info("实时转录准备就绪，等待音频数据...")
+            return True
                 
         except Exception as e:
             logger.error(f"启动实时转录时出错: {e}")
@@ -733,14 +760,11 @@ class MyAudioMediaPort(pj.AudioMediaPort):
             logger.error(f"详细错误: {traceback.format_exc()}")
         
         return False
-    
-    def _realtime_transcription_loop(self, audio_media):
-        """实时转录线程的主循环"""
-        logger.info("开始实时转录循环")
+
+    def _process_audio_data_loop(self):
+        """处理音频数据的线程循环，不调用PJSIP API"""
+        logger.info("开始音频处理循环")
         try:
-            # 连接音频媒体到这个端口
-            audio_media.startTransmit(self)
-            
             # 主循环
             while self.transcription_active:
                 # 检查是否有足够的数据进行转录
@@ -753,16 +777,12 @@ class MyAudioMediaPort(pj.AudioMediaPort):
                 time.sleep(0.1)  # 减少CPU使用
                 
         except Exception as e:
-            logger.error(f"实时转录循环出错: {e}")
+            logger.error(f"音频处理循环出错: {e}")
+            import traceback
+            logger.error(f"详细错误: {traceback.format_exc()}")
         finally:
-            # 清理资源
-            try:
-                if audio_media:
-                    audio_media.stopTransmit(self)
-            except:
-                pass
             self.transcription_active = False
-            logger.info("实时转录循环已结束")
+            logger.info("音频处理循环已结束")
     
     def _transcribe_current_buffer(self):
         """转录当前缓冲区中的音频数据"""

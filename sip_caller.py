@@ -149,7 +149,7 @@ class SIPCall(pj.Call):
             self.recorder = pj.AudioMediaRecorder()
             self.recorder.createRecorder(self.recording_file)
             
-            # 连接到通话 - 修复方法：使用getAudioMedia而不是getAudioVideoStream
+            # 连接到通话 - 恢复到之前的录音方式
             try:
                 # 首先尝试使用getAudioMedia方法
                 call_media = self.getAudioMedia(-1)  # -1表示第一个可用的音频媒体
@@ -164,6 +164,7 @@ class SIPCall(pj.Call):
             
             logger.info(f"开始录音: {self.recording_file}")
             return True
+            
         except Exception as e:
             logger.error(f"录音启动失败: {e}")
             self.recording_file = None
@@ -261,14 +262,18 @@ class SIPCall(pj.Call):
         try:
             # 检查是否有音频媒体
             try:
+                # 获取远程音频媒体
                 audio_media = self.getAudioMedia(-1)
                 logger.info("成功获取音频媒体")
                 
-                # 如果已经创建了音频端口，连接它
+                # 如果已经创建了音频端口，连接它用于实时转录
                 if hasattr(self, 'audio_port') and self.audio_port:
                     logger.info("连接音频媒体到转录端口")
                     audio_media.startTransmit(self.audio_port)
                     logger.info("音频媒体已连接到转录端口")
+                
+                # 不在这里处理录音，已经在start_recording中处理了
+                
             except Exception as e:
                 logger.error(f"处理音频媒体时出错: {e}")
                 import traceback
@@ -307,6 +312,10 @@ class SIPCall(pj.Call):
                 
             elif ci.state == pj.PJSIP_INV_STATE_CONFIRMED:
                 logger.info("通话已接通")
+                
+                # 等待确保通话流建立
+                time.sleep(0.5)
+                
                 # 开始录音
                 if prm and hasattr(prm, 'remoteUri') and prm.remoteUri:
                     self.start_recording(prm.remoteUri)
@@ -316,6 +325,13 @@ class SIPCall(pj.Call):
                 else:
                     logger.warning("缺少远程URI信息和预设号码，使用未知号码录音")
                     self.start_recording("unknown")
+                
+                # 获取Endpoint实例，方便后续使用
+                if hasattr(self.acc, "_pjsip_endpoint") and self.acc._pjsip_endpoint:
+                    self.ep = self.acc._pjsip_endpoint
+                else:
+                    # 尝试获取全局实例
+                    self.ep = pj.Endpoint.instance()
                 
                 # 启动实时语音转录
                 if self.whisper_model:

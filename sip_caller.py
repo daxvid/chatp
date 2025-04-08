@@ -327,11 +327,13 @@ class SIPCall(pj.Call):
                     self.start_recording("unknown")
                 
                 # 获取Endpoint实例，方便后续使用
-                if hasattr(self.acc, "_pjsip_endpoint") and self.acc._pjsip_endpoint:
-                    self.ep = self.acc._pjsip_endpoint
-                else:
-                    # 尝试获取全局实例
+                try:
+                    # 尝试获取全局Endpoint实例
                     self.ep = pj.Endpoint.instance()
+                    logger.info("成功获取全局Endpoint实例")
+                except Exception as e:
+                    logger.warning(f"无法获取Endpoint实例: {e}")
+                    self.ep = None
                 
                 # 启动实时语音转录
                 if self.whisper_model:

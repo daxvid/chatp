@@ -152,6 +152,57 @@ def main():
                 tts_config['voice']
             )
             
+            # 等待通话完成
+            logger.info("等待通话完成...")
+            call_duration_start = time.time()
+            call_duration_timeout = 180  # 最长3分钟通话时间
+            
+            while sip_caller.current_call and sip_caller.current_call.isActive():
+                if exit_event.is_set():
+                    logger.info("检测到退出请求，中断当前通话")
+                    sip_caller.hangup()
+                    break
+                
+                # 检查是否超时
+                if time.time() - call_duration_start > call_duration_timeout:
+                    logger.warning(f"通话时间超过{call_duration_timeout}秒，强制结束")
+                    sip_caller.hangup()
+                    break
+                    
+                # 每秒检查一次通话状态
+                try:
+                    if sip_caller.current_call:
+                        call_info = sip_caller.current_call.getInfo()
+                        state_names = {
+                            pj.PJSIP_INV_STATE_NULL: "NULL",
+                            pj.PJSIP_INV_STATE_CALLING: "CALLING",
+                            pj.PJSIP_INV_STATE_INCOMING: "INCOMING",
+                            pj.PJSIP_INV_STATE_EARLY: "EARLY",
+                            pj.PJSIP_INV_STATE_CONNECTING: "CONNECTING",
+                            pj.PJSIP_INV_STATE_CONFIRMED: "CONFIRMED",
+                            pj.PJSIP_INV_STATE_DISCONNECTED: "DISCONNECTED"
+                        }
+                        state_name = state_names.get(call_info.state, f"未知状态({call_info.state})")
+                        logger.debug(f"通话状态: {state_name}")
+                        
+                        # 如果通话已断开，退出等待循环
+                        if call_info.state == pj.PJSIP_INV_STATE_DISCONNECTED:
+                            logger.info("通话已断开，继续下一个号码")
+                            break
+                except Exception as e:
+                    logger.debug(f"获取通话状态时出错: {e}")
+                
+                time.sleep(1)
+            
+            # 确保通话已结束
+            if sip_caller.current_call and sip_caller.current_call.isActive():
+                logger.info("强制结束当前通话")
+                sip_caller.hangup()
+                
+            # 等待一小段时间确保录音和转录完成
+            logger.info("等待录音和转录完成...")
+            time.sleep(3)
+            
             # 保存结果
             call_manager.save_call_results(call_log_file)
             

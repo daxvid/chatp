@@ -117,8 +117,17 @@ class SIPCall(pj.Call):
             self.recorder = pj.AudioMediaRecorder()
             self.recorder.createRecorder(self.recording_file)
             
-            # 连接到通话
-            call_media = self.getAudioVideoStream()[0]
+            # 连接到通话 - 修复方法：使用getAudioMedia而不是getAudioVideoStream
+            try:
+                # 首先尝试使用getAudioMedia方法
+                call_media = self.getAudioMedia(-1)  # -1表示第一个可用的音频媒体
+                logger.info(f"成功获取音频媒体")
+            except Exception as e:
+                logger.error(f"无法获取音频媒体: {e}")
+                logger.error("录音功能不可用")
+                return False
+                
+            # 开始录音
             call_media.startTransmit(self.recorder)
             
             logger.info(f"开始录音: {self.recording_file}")
@@ -219,14 +228,8 @@ class SIPCall(pj.Call):
                             logger.info("成功获取音频媒体")
                         except Exception as e:
                             logger.error(f"获取音频媒体失败: {e}")
-                            
-                            # 尝试通过另一种方式获取
-                            try:
-                                audio_stream = self.getAudioVideoStream()[0]
-                                logger.info("通过备选方法获取到音频流")
-                            except Exception as e2:
-                                logger.error(f"获取音频流失败: {e2}")
-                                return
+                            logger.error("语音播放功能不可用")
+                            return
                         
                         # 开始传输音频
                         player.startTransmit(audio_stream)
@@ -270,6 +273,7 @@ class SIPCaller:
         self.ep = None
         self.acc = None
         self.current_call = None
+        self.phone_number = None
         self.whisper_model = None
         
         # 初始化PJSIP
@@ -462,6 +466,7 @@ class SIPCaller:
             logger.info("拨号请求已发送")
             
             self.current_call = call
+            self.phone_number = number
             
             # 等待呼叫状态变化
             logger.info("等待呼叫状态变化...")

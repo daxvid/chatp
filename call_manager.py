@@ -129,17 +129,22 @@ class CallManager:
                     self.sip_caller.hangup()
                     result['status'] = '接通超时'
                 else:
-                    # 如果已接通，等待通话结束
-                    call_duration_timeout = 180  # 通话最长3分钟
-                    call_duration_start = time.time()
-                    
-                    while self.sip_caller.current_call and time.time() - call_duration_start < call_duration_timeout:
-                        time.sleep(1)
-                    
-                    # 如果通话超时，主动挂断
-                    if time.time() - call_duration_start >= call_duration_timeout:
-                        logger.warning(f"电话 {phone_number} 通话时间过长，主动挂断")
-                        self.sip_caller.hangup()
+                    # 移除这段代码 - 不在这里等待通话结束
+                    # 这部分会造成并发拨号问题
+                    # 因为main.py中已经有等待逻辑了
+                    # 只检查通话是否已断开
+                    if self.sip_caller.current_call:
+                        try:
+                            call_info = self.sip_caller.current_call.getInfo()
+                            if call_info.state == pj.PJSIP_INV_STATE_DISCONNECTED:
+                                logger.info(f"电话 {phone_number} 已完成")
+                            else:
+                                logger.info(f"电话 {phone_number} 正在进行中，状态：{call_info.state}")
+                        except Exception as e:
+                            logger.warning(f"获取最终呼叫状态异常: {e}")
+                
+                # 不要再在这里挂断电话 - 由main.py控制通话结束
+                # 只做状态检查和数据收集
                 
                 # 计算通话时长
                 duration = (datetime.now() - start_time).total_seconds()
@@ -165,11 +170,6 @@ class CallManager:
                     logger.warning("呼叫对象无效，无法获取录音或转录")
             else:
                 logger.warning(f"电话 {phone_number} 拨打失败")
-            
-            # 确保通话已结束
-            if self.sip_caller.current_call:
-                logger.info(f"确保通话结束，挂断电话 {phone_number}")
-                self.sip_caller.hangup()
             
             # 保存结果
             self.call_results.append(result)
@@ -198,7 +198,9 @@ class CallManager:
             return None
             
     def process_calls(self, tts_text, tts_voice, log_file, interval=5):
-        """处理所有呼叫"""
+        """处理所有呼叫 - 已由main.py中的调用逻辑替代"""
+        logger.warning("此方法已弃用，请使用main.py中的呼叫处理逻辑")
+        
         if not self.call_list:
             logger.error("呼叫列表为空")
             return False
@@ -209,10 +211,20 @@ class CallManager:
             for i, phone_number in enumerate(self.call_list):
                 logger.info(f"正在拨打第{i+1}个号码: {phone_number}")
                 
+                # 拨号，但不等待完成
                 result = self.make_call_with_tts(phone_number, tts_text, tts_voice)
                 
                 # 每次呼叫后保存结果
                 self.save_call_results(log_file)
+                
+                # 等待通话结束 - 这里应该交由main.py控制
+                # 只是为了向后兼容才保留此方法
+                if self.sip_caller.current_call and self.sip_caller.current_call.isActive():
+                    logger.info(f"等待电话 {phone_number} 通话结束...")
+                    # 简单等待一段时间让SIPCall回调有机会处理
+                    time.sleep(5)
+                    # 强制结束通话
+                    self.sip_caller.hangup()
                 
                 # 如果不是最后一个号码，等待一段时间再拨下一个
                 if i < len(self.call_list) - 1:

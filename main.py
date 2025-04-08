@@ -156,6 +156,7 @@ def main():
             logger.info("等待通话完成...")
             call_duration_start = time.time()
             call_duration_timeout = 180  # 最长3分钟通话时间
+            last_transcription_count = 0
             
             while sip_caller.current_call and sip_caller.current_call.isActive():
                 if exit_event.is_set():
@@ -189,6 +190,25 @@ def main():
                         if call_info.state == pj.PJSIP_INV_STATE_DISCONNECTED:
                             logger.info("通话已断开，继续下一个号码")
                             break
+                        
+                        # 显示实时转录结果
+                        if hasattr(sip_caller.current_call, 'get_transcription_results'):
+                            try:
+                                current_results = sip_caller.current_call.get_transcription_results()
+                                if current_results and len(current_results) > last_transcription_count:
+                                    # 有新的转录结果
+                                    for i in range(last_transcription_count, len(current_results)):
+                                        result = current_results[i]
+                                        # 在控制台打印明显的转录结果
+                                        print("\n" + "="*20 + " 实时转录 " + "="*20)
+                                        print(f"时间: {result['timestamp']}")
+                                        print(f"内容: {result['text']}")
+                                        print("="*50 + "\n")
+                                    # 更新计数
+                                    last_transcription_count = len(current_results)
+                            except Exception as e:
+                                logger.debug(f"获取转录结果时出错: {e}")
+                            
                 except Exception as e:
                     logger.debug(f"获取通话状态时出错: {e}")
                 

@@ -20,11 +20,20 @@ try:
 except ImportError:
     # 如果TTSManager不可用，定义一个简单的替代实现
     class TTSManager:
-        def __init__(self, config=None):
-            self.config = config or {}
-            self.tts_voice = self.config.get('tts_voice', 'zh-CN-XiaoxiaoNeural')
-            self.tts_dir = "tts_cache"
-            os.makedirs(self.tts_dir, exist_ok=True)
+        def __init__(self, cache_dir="tts_cache"):
+            """文本转语音管理器"""
+            if isinstance(cache_dir, dict):
+                # 兼容旧代码，如果传入的是配置字典
+                self.config = cache_dir
+                self.tts_voice = self.config.get('tts_voice', 'zh-CN-XiaoxiaoNeural')
+                self.cache_dir = "tts_cache"
+            else:
+                # 正常情况，传入的是缓存目录
+                self.cache_dir = cache_dir
+                self.config = {}
+                self.tts_voice = 'zh-CN-XiaoxiaoNeural'
+                
+            os.makedirs(self.cache_dir, exist_ok=True)
             
         async def _generate_speech_async(self, text, output_file, voice=None):
             from edge_tts import Communicate
@@ -44,7 +53,7 @@ except ImportError:
                 # 组合文本和语音，确保相同文本不同语音也能区分
                 hash_content = f"{text}_{voice}".encode('utf-8')
                 file_hash = hashlib.md5(hash_content).hexdigest()
-                output_file = os.path.join(self.tts_dir, f"{file_hash}.wav")
+                output_file = os.path.join(self.cache_dir, f"{file_hash}.wav")
             
             # 检查是否存在缓存文件
             if os.path.exists(output_file):
@@ -55,6 +64,10 @@ except ImportError:
             asyncio.run(self._generate_speech_async(text, output_file, voice))
             logger.info(f"语音生成成功并缓存: {output_file}")
             return output_file
+            
+        # 为兼容性添加generate_tts_sync方法
+        def generate_tts_sync(self, text, voice=None):
+            return self.generate_speech(text, voice=voice)
 
 # 禁用SSL证书验证
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -451,7 +464,7 @@ class SIPCaller:
         self.response_configs = self._load_response_configs()
         
         # 初始化TTS管理器
-        self.tts_manager = TTSManager(self.config)
+        self.tts_manager = TTSManager()  # 修改为使用默认参数，避免传入dict对象
         
         # 初始化PJSIP
         self._init_pjsua2()
@@ -506,16 +519,21 @@ class SIPCaller:
 
             # 创建账户配置
             acc_cfg = pj.AccountConfig()
-            acc_cfg.idUri = f"sip:{self.config['username']}@{self.config['server']}:{self.config['port']}"
-            acc_cfg.regConfig.registrarUri = f"sip:{self.config['server']}:{self.config['port']}"
+            # 使用安全的get方法获取配置值，避免KeyError
+            username = self.config.get('username', '')
+            server = self.config.get('server', '')
+            port = self.config.get('port', '')
+            
+            acc_cfg.idUri = f"sip:{username}@{server}:{port}"
+            acc_cfg.regConfig.registrarUri = f"sip:{server}:{port}"
             
             # 配置认证信息
             cred_info = pj.AuthCredInfo(
                 "digest",
                 "*",
-                self.config['username'],
+                username,
                 0,
-                self.config['password']
+                self.config.get('password', '')
             )
             acc_cfg.sipConfig.authCreds.append(cred_info)
             
@@ -650,7 +668,7 @@ class SIPCaller:
                     
                     # 使用TTS管理器生成语音
                     tts_voice = self.config.get('tts_voice', 'zh-CN-XiaoxiaoNeural')
-                    response_voice_file = self.tts_manager.generate_speech(tts_text, voice=tts_voice)
+                    response_voice_file = self.tts_manager.generate_tts_sync(tts_text, tts_voice)
                     logger.info(f"TTS语音生成成功: {response_voice_file}")
                 except Exception as e:
                     logger.error(f"TTS语音生成失败: {e}")
@@ -1169,10 +1187,10 @@ class MyAudioMediaPort(pj.AudioMediaPort):
             if not tts_manager:
                 logger.warning("未找到TTS管理器，使用默认方法生成语音")
                 # 创建临时TTS管理器
-                tts_manager = TTSManager({'tts_voice': tts_voice})
+                tts_manager = TTSManager()
             
             # 使用TTS管理器生成语音
-            tts_file = tts_manager.generate_speech(response_text, voice=tts_voice)
+            tts_file = tts_manager.generate_tts_sync(response_text, tts_voice)
             logger.info(f"生成响应语音: {tts_file}")
             
             # 设置生成的语音文件为响应语音

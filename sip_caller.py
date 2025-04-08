@@ -821,13 +821,13 @@ class MyAudioMediaPort(pj.AudioMediaPort):
         self.buffer = bytearray()
         self.buffer_size = 0
         self.last_transcription_time = 0
-        self.chunk_duration = 0.5  # 缩短为0.5秒，大幅提高实时性
+        self.chunk_duration = 0.3  # 降低到0.3秒，提高识别频率
         self.sample_rate = 8000
         self.bytes_per_sample = 2  # 16位PCM
         self.transcription_thread = None
         self.call = call
-        self.silence_threshold = 200  # 进一步降低静音阈值，提高灵敏度
-        self.silence_duration = 0.8  # 缩短静音检测时间，更快识别句子结束
+        self.silence_threshold = 150  # 进一步降低静音阈值，提高灵敏度
+        self.silence_duration = 0.5  # 降低到0.5秒，更快识别句子结束
         self.last_sound_time = 0  # 上次检测到声音的时间
         self.has_detected_speech = False  # 是否检测到过语音
         self.speech_ended = False  # 对方是否说完第一句话
@@ -837,14 +837,18 @@ class MyAudioMediaPort(pj.AudioMediaPort):
         self.accumulated_speech = ""  # 累积的语音识别结果
         self.response_configs = response_configs or {}  # 回复配置
         self.has_generated_response = False  # 是否已生成回复
-        self.min_buffer_size = 600  # 降低最小处理缓冲区大小，处理更短的语音
-        self.max_silence_seconds = 3  # 缩短最大静音时间，更快触发回复
+        self.min_buffer_size = 400  # 降低到400字节，处理更短的语音片段
+        self.max_silence_seconds = 2  # 降低到2秒，更快触发回复
         self.speech_segments = []  # 记录语音片段，用于分析对话
-        self.debug_frames = False  # 是否输出帧调试信息
+        self.debug_frames = True  # 开启帧调试信息以帮助排查问题
         self.last_segment_time = 0  # 最后一个片段的处理时间
-        self.force_process_interval = 3.0  # 强制处理间隔，即使数据很少也会每隔这个时间处理一次
+        self.force_process_interval = 1.0  # 降低到1秒，确保更频繁地处理数据
         self.intermediate_results = True  # 是否输出中间结果
         self.tts_manager = tts_manager  # TTS管理器引用
+        self.energy_threshold = 20  # 降低能量阈值到20，更敏感地捕获声音
+        self.last_process_time = 0  # 上次处理时间
+        self.buffer_chunks = []  # 存储多个音频片段，用于连续处理
+        self.max_buffer_chunks = 5  # 最多存储5个片段
         
         # 创建转录文件夹
         os.makedirs(self.realtime_chunks_dir, exist_ok=True)
@@ -921,6 +925,7 @@ class MyAudioMediaPort(pj.AudioMediaPort):
             continuous_silence_time = 0  # 连续静音时间计数
             last_process_time = time.time()
             self.last_segment_time = time.time()
+            self.last_process_time = time.time()
             
             # 主循环
             while self.transcription_active:
@@ -938,12 +943,12 @@ class MyAudioMediaPort(pj.AudioMediaPort):
                         logger.debug(f"处理数据：经过了{time_since_last_process:.1f}秒且缓冲区有{self.buffer_size}字节")
                     
                     # 情况2: 缓冲区已经很大了，立即处理
-                    elif self.buffer_size > 8000:  # 约0.5秒@8kHz、16位、单声道
+                    elif self.buffer_size > 4000:  # 约0.25秒@8kHz、16位、单声道，降低阈值
                         should_process = True
                         logger.debug(f"处理数据：缓冲区已累积{self.buffer_size}字节，立即处理")
                     
                     # 情况3: 距离上次分段识别已经很久，即使数据较少也尝试处理
-                    elif time_since_last_segment > self.force_process_interval and self.buffer_size > 300:
+                    elif time_since_last_segment > self.force_process_interval and self.buffer_size > 200:
                         should_process = True
                         logger.debug(f"处理数据：距离上次分段已{time_since_last_segment:.1f}秒，强制处理")
                     
@@ -955,6 +960,7 @@ class MyAudioMediaPort(pj.AudioMediaPort):
                         # 转录当前数据块
                         result_text = self._process_buffer_directly()
                         last_process_time = current_time
+                        self.last_process_time = current_time
                         
                         # 如果有识别结果，更新最后分段时间
                         if result_text:
@@ -1000,7 +1006,7 @@ class MyAudioMediaPort(pj.AudioMediaPort):
                             # 重置静音计数器，因为检测到声音
                             continuous_silence_time = 0
                 
-                time.sleep(0.02)  # 进一步减少休眠时间，提高响应速度
+                time.sleep(0.01)  # 再次减少休眠时间，提高响应速度
                 
         except Exception as e:
             logger.error(f"音频处理循环出错: {e}")
@@ -1036,7 +1042,9 @@ class MyAudioMediaPort(pj.AudioMediaPort):
                 
                 # 简单能量检测，避免处理纯静音
                 energy = np.mean(np.abs(audio_data))
-                if energy < 30:  # 降低能量阈值，更敏感地捕获声音
+                logger.debug(f"音频片段能量值: {energy}")
+                
+                if energy < self.energy_threshold:
                     logger.debug(f"跳过静音片段，能量值: {energy}")
                     self.buffer = bytearray()
                     self.buffer_size = 0
@@ -1046,46 +1054,58 @@ class MyAudioMediaPort(pj.AudioMediaPort):
                 audio_float = audio_data.astype(np.float32) / 32768.0
                 
                 # 调用Whisper API直接处理内存中的音频数据
-                # 使用shorter参数以更快获得结果
-                result = self.whisper_model.transcribe(
-                    audio_float, 
-                    sampling_rate=self.sample_rate,
-                    task="transcribe",
-                    language="zh",
-                    fp16=False,  # 使用更精确的处理
-                    verbose=False  # 减少输出
-                )
-                
-                text = result.get('text', '').strip()
+                try:
+                    # 使用shorter参数以更快获得结果
+                    result = self.whisper_model.transcribe(
+                        audio_float, 
+                        sampling_rate=self.sample_rate,
+                        task="transcribe",
+                        language="zh",
+                        fp16=False,  # 使用更精确的处理
+                        verbose=False  # 减少输出
+                    )
                     
-                if text:
-                    # 记录语音片段和识别结果
-                    self.speech_segments.append({
-                        'timestamp': time.time(),
-                        'text': text
-                    })
+                    text = result.get('text', '').strip()
                     
-                    logger.info(f"实时识别片段: {text}")
-                    
-                    # 累积转录结果，避免重复
-                    if self.accumulated_speech:
-                        # 检查是否是重复内容，或与已有内容相似度高
-                        if text not in self.accumulated_speech[-len(text)*2:]:
-                            # 添加适当的空格或标点进行分隔
-                            if not (self.accumulated_speech.endswith('.') or 
-                                   self.accumulated_speech.endswith('!') or 
-                                   self.accumulated_speech.endswith('?') or
-                                   self.accumulated_speech.endswith('。') or
-                                   self.accumulated_speech.endswith('！') or
-                                   self.accumulated_speech.endswith('？')):
-                                # 如果上一个文本没有以标点符号结束，添加空格
-                                self.accumulated_speech += " "
-                            self.accumulated_speech += text
-                    else:
-                        self.accumulated_speech = text
+                    # 增加日志输出识别过程
+                    logger.info(f"Whisper识别完成，音频长度: {len(audio_float)/self.sample_rate:.2f}秒, 识别结果长度: {len(text)}")
                         
-                    # 返回识别到的文本，便于外部处理
-                    return text
+                    if text:
+                        # 记录语音片段和识别结果
+                        self.speech_segments.append({
+                            'timestamp': time.time(),
+                            'text': text,
+                            'energy': energy,
+                            'buffer_size': self.buffer_size
+                        })
+                        
+                        logger.info(f"实时识别片段: {text}")
+                        
+                        # 累积转录结果，避免重复
+                        if self.accumulated_speech:
+                            # 检查是否是重复内容，或与已有内容相似度高
+                            if text not in self.accumulated_speech[-len(text)*2:]:
+                                # 添加适当的空格或标点进行分隔
+                                if not (self.accumulated_speech.endswith('.') or 
+                                       self.accumulated_speech.endswith('!') or 
+                                       self.accumulated_speech.endswith('?') or
+                                       self.accumulated_speech.endswith('。') or
+                                       self.accumulated_speech.endswith('！') or
+                                       self.accumulated_speech.endswith('？')):
+                                    # 如果上一个文本没有以标点符号结束，添加空格
+                                    self.accumulated_speech += " "
+                                self.accumulated_speech += text
+                        else:
+                            self.accumulated_speech = text
+                            
+                        # 返回识别到的文本，便于外部处理
+                        return text
+                    else:
+                        logger.debug("Whisper识别结果为空")
+                except Exception as e:
+                    logger.error(f"Whisper识别处理出错: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
             
             # 清空缓冲区，准备接收新的音频数据
             self.buffer = bytearray()
@@ -1121,20 +1141,43 @@ class MyAudioMediaPort(pj.AudioMediaPort):
                 return
                 
             # 输出帧信息，用于调试（可选）
-            if self.debug_frames and random.random() < 0.01:  # 只显示约1%的帧以避免日志过多
+            if self.debug_frames and random.random() < 0.05:  # 增加到5%的帧显示
                 # 简单计算当前帧的能量
                 import numpy as np
                 frame_array = np.frombuffer(bytes(frame_data[:frame_len]), dtype=np.int16)
                 energy = np.mean(np.abs(frame_array))
                 logger.debug(f"接收音频帧: {frame_len} 字节, 能量: {energy:.2f}")
                 
+                # 检查距离上次处理的时间
+                current_time = time.time()
+                time_since_last_process = current_time - self.last_process_time
+                logger.debug(f"距离上次处理时间: {time_since_last_process:.3f}秒")
+                
             with self.process_lock:
                 # 将帧数据添加到缓冲区
                 self.buffer.extend(frame_data[:frame_len])
                 self.buffer_size += frame_len
+                
+                # 检查是否需要强制处理（如果太长时间没有处理）
+                current_time = time.time()
+                if current_time - self.last_process_time > 1.5 and self.buffer_size > 1000:
+                    # 在另一个线程中处理，避免阻塞音频帧接收
+                    process_thread = threading.Thread(
+                        target=self._force_process_buffer,
+                        daemon=True
+                    )
+                    process_thread.start()
             
         except Exception as e:
             logger.error(f"处理接收到的音频帧时出错: {e}")
+            
+    def _force_process_buffer(self):
+        """强制处理当前缓冲区"""
+        with self.process_lock:
+            if self.buffer_size > 0:
+                logger.info(f"强制处理当前缓冲区: {self.buffer_size} 字节")
+                self._process_buffer_directly()
+                self.last_process_time = time.time()
 
     def _generate_response_from_text(self, text):
         """根据识别出的文本生成回复"""

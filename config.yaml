@@ -28,3 +28,11 @@ responses:
   interested: "感谢您的兴趣，我们的产品具有以下特点..."
   not_interested: "感谢您的时间，祝您生活愉快。"
   default: "抱歉，我没有听清楚，请您再说一遍。" 
+
+response_rules:
+  - keywords: ["价格", "多少钱", "费用"]
+    response: "我们的产品价格是998元，现在购买还有优惠。"
+  - keywords: ["地址", "位置", "在哪里"]
+    response: "我们位于北京市海淀区中关村科技园区。"
+  - keywords: ["联系", "客服", "咨询"]
+    response: "您可以拨打我们的客服热线400-123-4567获取更多信息。"

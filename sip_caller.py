@@ -263,17 +263,94 @@ class SIPCall(pj.Call):
                     logger.warning(f"录音文件过小，可能没有录到声音: {self.recording_file}")
                 
                 try:
-                    result = self.whisper_model.transcribe(self.recording_file)
-                    logger.info(f"语音识别结果: {result['text']}")
-                    return result['text']
+                    # 确保处理前没有其他程序占用文件
+                    if os.path.exists(self.recording_file + ".temp"):
+                        os.remove(self.recording_file + ".temp")
+                    
+                    # 复制一份文件进行处理，避免文件锁定问题
+                    shutil.copy2(self.recording_file, self.recording_file + ".temp")
+                    temp_file = self.recording_file + ".temp"
+                    
+                    # 使用更安全的方式调用whisper transcribe
+                    try:
+                        result = self.whisper_model.transcribe(
+                            temp_file,
+                            language="zh",
+                            task="transcribe",
+                            verbose=False
+                        )
+                        
+                        # 清理临时文件
+                        try:
+                            os.remove(temp_file)
+                        except:
+                            pass
+                            
+                        if isinstance(result, dict) and 'text' in result:
+                            logger.info(f"语音识别结果: {result['text']}")
+                            return result['text']
+                        else:
+                            logger.warning(f"语音识别结果格式异常: {type(result)}")
+                            if isinstance(result, dict):
+                                logger.warning(f"可用键: {result.keys()}")
+                            return str(result) if result else None
+                    except Exception as e:
+                        logger.error(f"Whisper处理失败: {e}")
+                        import traceback
+                        logger.error(f"详细错误: {traceback.format_exc()}")
+                        
+                        # 尝试降级处理，直接使用模型处理音频文件
+                        try:
+                            import numpy as np
+                            import soundfile as sf
+                            
+                            # 加载音频文件
+                            logger.info(f"尝试使用降级方法处理录音文件: {temp_file}")
+                            audio, sr = sf.read(temp_file)
+                            
+                            # 如果是双声道，转换为单声道
+                            if len(audio.shape) > 1 and audio.shape[1] > 1:
+                                audio = np.mean(audio, axis=1)
+                            
+                            # 如果采样率不是16kHz，进行重采样
+                            if sr != 16000:
+                                from scipy import signal
+                                target_len = int(len(audio) * 16000 / sr)
+                                audio = signal.resample(audio, target_len)
+                                sr = 16000
+                            
+                            # 直接使用模型处理音频数据
+                            result = self.whisper_model.transcribe(
+                                audio,
+                                sampling_rate=sr,
+                                language="zh",
+                                task="transcribe",
+                                verbose=False
+                            )
+                            
+                            if isinstance(result, dict) and 'text' in result:
+                                logger.info(f"降级方法语音识别结果: {result['text']}")
+                                return result['text']
+                            else:
+                                logger.warning(f"降级方法语音识别结果格式异常: {type(result)}")
+                                return None
+                        except Exception as e2:
+                            logger.error(f"降级处理也失败: {e2}")
+                            import traceback
+                            logger.error(f"详细错误: {traceback.format_exc()}")
+                            return None
                 except Exception as e:
                     logger.error(f"语音识别处理失败: {e}")
+                    import traceback
+                    logger.error(f"详细错误: {traceback.format_exc()}")
                     return None
             else:
                 logger.warning(f"录音文件不存在: {self.recording_file}")
             return None
         except Exception as e:
             logger.error(f"语音识别失败: {e}")
+            import traceback
+            logger.error(f"详细错误: {traceback.format_exc()}")
             return None
     
     def play_response_after_speech(self):
@@ -526,14 +603,24 @@ class SIPCall(pj.Call):
                             
                             # 使用Whisper进行转录
                             if self.whisper_model:
-                                result = self.whisper_model.transcribe(segment_file, language="zh")
-                                text = result.get("text", "").strip()
-                                
-                                if text:
-                                    logger.info(f"语音识别结果 (段{segment_count}): {text}")
-                                    # 这里可以添加进一步处理，如匹配回复规则等
-                                else:
-                                    logger.info(f"语音识别结果为空 (段{segment_count})")
+                                try:
+                                    result = self.whisper_model.transcribe(
+                                        segment_file, 
+                                        language="zh",
+                                        task="transcribe",
+                                        verbose=False
+                                    )
+                                    text = result.get("text", "").strip()
+                                    
+                                    if text:
+                                        logger.info(f"语音识别结果 (段{segment_count}): {text}")
+                                        # 这里可以添加进一步处理，如匹配回复规则等
+                                    else:
+                                        logger.info(f"语音识别结果为空 (段{segment_count})")
+                                except Exception as whisper_err:
+                                    logger.error(f"处理段{segment_count}时Whisper错误: {whisper_err}")
+                                    import traceback
+                                    logger.error(f"详细错误: {traceback.format_exc()}")
                             
                             # 更新上次处理的位置和时间
                             last_size = current_size

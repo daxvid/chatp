@@ -6,3 +6,4 @@ call_log.csv
 /.idea
 /recordings
 /tts_files
+/segments

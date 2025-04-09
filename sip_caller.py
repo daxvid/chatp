@@ -89,11 +89,20 @@ class SIPCall(pj.Call):
         self.has_played_response = False
         self.tts_manager = None
         self.response_configs = None
+        self.audio_media = None
+        self.ep = None
+        self.audio_recorder = None
         
         if self.voice_file:
             self._load_voice_file()
         if self.response_voice_file:
             self._load_response_file()
+
+        # 获取全局Endpoint实例，提前准备好
+        try:
+            self.ep = pj.Endpoint.instance()
+        except Exception as e:
+            logger.error(f"获取Endpoint实例失败: {e}")
 
     def _load_voice_file(self):
         """加载语音文件"""
@@ -317,20 +326,49 @@ class SIPCall(pj.Call):
         """媒体状态改变时的回调函数"""
         logger.info("媒体状态已改变")
         try:
+            # 获取Endpoint实例
+            if not self.ep:
+                try:
+                    self.ep = pj.Endpoint.instance()
+                    logger.info("成功获取全局Endpoint实例")
+                except Exception as e:
+                    logger.error(f"获取Endpoint实例失败: {e}")
+                    return
+                    
             # 检查是否有音频媒体
             try:
                 # 获取远程音频媒体
-                audio_media = self.getAudioMedia(-1)
+                self.audio_media = self.getAudioMedia(-1)
                 logger.info("成功获取音频媒体")
                 
-                # 如果已经创建了音频端口，连接它用于实时转录
+                # 直接开始录音 - 这是保证音频捕获的可靠方式
+                self._ensure_recording_started()
+                    
+                # 如果已经创建了音频端口，尝试连接它用于实时转录
                 if hasattr(self, 'audio_port') and self.audio_port:
-                    logger.info("连接音频媒体到转录端口")
-                    audio_media.startTransmit(self.audio_port)
-                    logger.info("音频媒体已连接到转录端口")
-                
-                # 不在这里处理录音，已经在start_recording中处理了
-                
+                    try:
+                        # 创建一个额外的录音器来捕获音频，绕过直接连接
+                        recordings_dir = "recordings_realtime"
+                        os.makedirs(recordings_dir, exist_ok=True)
+                        
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        realtime_rec_file = os.path.join(recordings_dir, f"realtime_{self.phone_number}_{timestamp}.wav")
+                        
+                        # 创建实时录音器
+                        self.audio_recorder = pj.AudioMediaRecorder()
+                        self.audio_recorder.createRecorder(realtime_rec_file)
+                        
+                        # 连接音频媒体到录音器
+                        self.audio_media.startTransmit(self.audio_recorder)
+                        logger.info(f"已连接音频媒体到实时录音器: {realtime_rec_file}")
+                        
+                        # 告知音频端口开始监控这个文件
+                        self.audio_port.set_realtime_recording_file(realtime_rec_file)
+                        logger.info("已设置实时录音文件用于转录")
+                    except Exception as e:
+                        logger.error(f"设置实时录音失败: {e}")
+                        import traceback
+                        logger.error(f"详细错误: {traceback.format_exc()}")
             except Exception as e:
                 logger.error(f"处理音频媒体时出错: {e}")
                 import traceback
@@ -340,7 +378,12 @@ class SIPCall(pj.Call):
             logger.error(f"处理媒体状态变化时出错: {e}")
             import traceback
             logger.error(f"详细错误: {traceback.format_exc()}")
-
+    
+    def _ensure_recording_started(self):
+        """确保录音已经开始"""
+        if not self.recorder and self.phone_number:
+            self.start_recording(self.phone_number)
+        
     def onCallState(self, prm):
         """呼叫状态改变时的回调函数"""
         try:
@@ -355,9 +398,9 @@ class SIPCall(pj.Call):
                 pj.PJSIP_INV_STATE_DISCONNECTED: "DISCONNECTED"
             }
             state_name = state_names.get(ci.state, f"未知状态({ci.state})")
+            
             logger.info(f"呼叫状态改变: {state_name}, 状态码: {ci.lastStatusCode}, 原因: {ci.lastReason}")
             
-            # 根据不同的状态执行不同的操作
             if ci.state == pj.PJSIP_INV_STATE_CALLING:
                 logger.info("正在呼叫中...")
                 
@@ -370,87 +413,152 @@ class SIPCall(pj.Call):
             elif ci.state == pj.PJSIP_INV_STATE_CONFIRMED:
                 logger.info("通话已接通")
                 
-                # 等待确保通话流建立
-                time.sleep(0.5)
-                
-                # 开始录音
-                if prm and hasattr(prm, 'remoteUri') and prm.remoteUri:
-                    self.start_recording(prm.remoteUri)
-                elif self.phone_number:
-                    logger.info(f"使用预设电话号码进行录音: {self.phone_number}")
+                # 如果有指定电话号码，启动录音
+                if self.phone_number:
+                    # 启动录音
                     self.start_recording(self.phone_number)
-                else:
-                    logger.warning("缺少远程URI信息和预设号码，使用未知号码录音")
-                    self.start_recording("unknown")
-                
-                # 获取Endpoint实例，方便后续使用
-                try:
-                    # 尝试获取全局Endpoint实例
-                    self.ep = pj.Endpoint.instance()
-                    logger.info("成功获取全局Endpoint实例")
-                except Exception as e:
-                    logger.warning(f"无法获取Endpoint实例: {e}")
-                    self.ep = None
-                
-                # 启动实时语音转录
-                if self.whisper_model:
-                    logger.info("初始化实时语音转录...")
-                    try:
-                        # 创建音频媒体端口并传入当前call对象和回复配置
-                        self.audio_port = MyAudioMediaPort(
-                            self.whisper_model, 
-                            self,
-                            self.response_configs if hasattr(self, 'response_configs') else None,
-                            self.tts_manager if hasattr(self, 'tts_manager') else None
-                        )
-                        # 启动实时转录
-                        if self.audio_port.start_realtime_transcription(self):
-                            logger.info("实时语音转录已启动")
-                        else:
-                            logger.error("启动实时语音转录失败")
-                    except Exception as e:
-                        logger.error(f"初始化实时语音转录时出错: {e}")
-                        import traceback
-                        logger.error(f"详细错误: {traceback.format_exc()}")
-                else:
-                    logger.warning("Whisper模型未设置，无法进行实时语音转录")
                     
-            elif ci.state == pj.PJSIP_INV_STATE_DISCONNECTED:
-                if ci.lastStatusCode >= 400:
-                    logger.error(f"通话失败: 状态码={ci.lastStatusCode}, 原因={ci.lastReason}")
-                else:
-                    logger.info(f"通话已结束: 状态码={ci.lastStatusCode}, 原因={ci.lastReason}")
+                    # 在录音启动后，直接开始实时转录
+                    if self.whisper_model and self.recording_file:
+                        logger.info("初始化实时语音转录...")
+                        # 启动transcriber_thread
+                        self.start_realtime_transcription_thread()
                 
-                # 停止实时转录
+            elif ci.state == pj.PJSIP_INV_STATE_DISCONNECTED:
+                logger.info(f"通话已结束: 状态码={ci.lastStatusCode}, 原因={ci.lastReason}")
+                
+                # 停止音频传输
                 try:
-                    if hasattr(self, 'audio_port') and self.audio_port:
-                        # 在主线程中安全断开连接
-                        try:
-                            # 获取音频媒体对象
-                            audio_media = self.getAudioMedia(-1)
-                            # 停止传输
-                            if audio_media:
-                                audio_media.stopTransmit(self.audio_port)
-                                logger.info("音频媒体传输已停止")
-                        except Exception as e:
-                            logger.error(f"停止音频传输时出错: {e}")
-                            
-                        # 停止转录线程
-                        self.audio_port.transcription_active = False
-                        logger.info("实时语音转录已停止")
+                    if hasattr(self, 'audio_media') and self.audio_media:
+                        self.audio_media.stopTransmit(self.audio_recorder)
                 except Exception as e:
-                    logger.error(f"停止实时语音转录时出错: {e}")
+                    logger.error(f"停止音频传输时出错: {e}")
+                
+                # 停止实时语音转录
+                if hasattr(self, 'transcriber_thread') and self.transcriber_thread:
+                    logger.info("实时语音转录已停止")
+                    self.transcriber_active = False
+                    self.transcriber_thread.join(timeout=2)
                 
                 # 停止录音
-                self.stop_recording()
-                # 转录音频 - 这里仍然保留整个通话的录音转录功能
-                if self.recording_file and os.path.exists(self.recording_file):
+                if self.recorder:
+                    self.stop_recording()
+                    
+                    # 转录通话录音
                     self.transcribe_audio()
+                    
         except Exception as e:
             logger.error(f"处理呼叫状态变化时出错: {e}")
             import traceback
             logger.error(f"详细错误: {traceback.format_exc()}")
 
+    def start_realtime_transcription_thread(self):
+        """启动实时转录线程"""
+        try:
+            # 创建线程，但不立即启动，等待录音启动完成
+            self.transcriber_active = True
+            self.transcriber_thread = threading.Thread(
+                target=self._realtime_transcription_loop,
+                daemon=True
+            )
+            self.transcriber_thread.start()
+            logger.info("实时转录线程已启动")
+            return True
+        except Exception as e:
+            logger.error(f"启动实时转录线程失败: {e}")
+            return False
+
+    def _realtime_transcription_loop(self):
+        """实时转录循环"""
+        try:
+            logger.info(f"开始实时转录循环，监控录音文件: {self.recording_file}")
+            last_size = 0
+            last_transcription_time = time.time()
+            min_chunk_size = 8000  # 至少4KB新数据才处理
+            segment_count = 0
+            
+            # 等待录音文件创建
+            while self.transcriber_active and not os.path.exists(self.recording_file):
+                logger.info(f"等待录音文件创建: {self.recording_file}")
+                time.sleep(0.5)
+            
+            if not os.path.exists(self.recording_file):
+                logger.error(f"录音文件未创建: {self.recording_file}")
+                return
+                
+            logger.info(f"录音文件已创建，开始监控: {self.recording_file}")
+            
+            # 主循环
+            while self.transcriber_active:
+                try:
+                    # 检查文件是否存在
+                    if not os.path.exists(self.recording_file):
+                        logger.error(f"录音文件已消失: {self.recording_file}")
+                        break
+                        
+                    # 获取当前文件大小
+                    current_size = os.path.getsize(self.recording_file)
+                    
+                    # 如果文件有显著增长，处理新数据
+                    size_diff = current_size - last_size
+                    if size_diff > min_chunk_size:
+                        segment_count += 1
+                        logger.info(f"检测到录音文件增长: 段{segment_count}, {last_size} -> {current_size} 字节 (+{size_diff}字节)")
+                        
+                        # 确保有足够的间隔让Whisper处理数据
+                        time_since_last = time.time() - last_transcription_time
+                        if time_since_last < 1.0:
+                            time.sleep(1.0 - time_since_last)
+                            
+                        # 处理新的音频段
+                        try:
+                            # 从录音文件创建临时文件
+                            segment_dir = "segments"
+                            os.makedirs(segment_dir, exist_ok=True)
+                            
+                            segment_file = os.path.join(segment_dir, f"segment_{segment_count}.wav")
+                            
+                            # 复制整个录音文件
+                            shutil.copy2(self.recording_file, segment_file)
+                            
+                            # 使用Whisper处理整个文件
+                            logger.info(f"处理音频段 {segment_count}，大小: {current_size} 字节")
+                            
+                            # 使用Whisper进行转录
+                            if self.whisper_model:
+                                result = self.whisper_model.transcribe(segment_file, language="zh")
+                                text = result.get("text", "").strip()
+                                
+                                if text:
+                                    logger.info(f"语音识别结果 (段{segment_count}): {text}")
+                                    # 这里可以添加进一步处理，如匹配回复规则等
+                                else:
+                                    logger.info(f"语音识别结果为空 (段{segment_count})")
+                            
+                            # 更新上次处理的位置和时间
+                            last_size = current_size
+                            last_transcription_time = time.time()
+                            
+                        except Exception as e:
+                            logger.error(f"处理音频段 {segment_count} 时出错: {e}")
+                            import traceback
+                            logger.error(f"详细错误: {traceback.format_exc()}")
+                    
+                    # 短暂休眠
+                    time.sleep(0.5)
+                    
+                except Exception as e:
+                    logger.error(f"实时转录循环出错: {e}")
+                    time.sleep(1)
+            
+            logger.info("实时转录循环结束")
+            
+        except Exception as e:
+            logger.error(f"实时转录线程出错: {e}")
+            import traceback
+            logger.error(f"详细错误: {traceback.format_exc()}")
+        
+        self.transcriber_active = False
 
 class SIPCaller:
     """SIP呼叫管理类"""
@@ -464,7 +572,7 @@ class SIPCaller:
         self.response_configs = self._load_response_configs()
         
         # 初始化TTS管理器
-        self.tts_manager = TTSManager()  # 修改为使用默认参数，避免传入dict对象
+        self.tts_manager = TTSManager()
         
         # 初始化PJSIP
         self._init_pjsua2()
@@ -648,16 +756,20 @@ class SIPCaller:
                 logger.warning("已有通话在进行中")
                 return False
 
-            # 检查SIP账户是否注册成功
-            try:
-                acc_info = self.acc.getInfo()
-                if acc_info.regStatus != pj.PJSIP_SC_OK:
-                    logger.error(f"SIP账户未注册成功，状态码: {acc_info.regStatus}")
-                    logger.error("在注册成功前不能拨打电话")
-                    return False
-            except Exception as e:
-                logger.error(f"获取SIP账户状态失败: {e}")
-                return False
+            # 清理数据
+            self.phone_number = number.strip()
+            logger.info(f"=== 开始拨号 ===")
+            logger.info(f"目标号码: {self.phone_number}")
+            
+            # 构建SIP URI
+            sip_uri = f"sip:{self.phone_number}@{self.config.get('server', '')}:{self.config.get('port', '')}"
+            logger.info(f"SIP URI: {sip_uri}")
+            logger.info(f"SIP账户: {self.config.get('username', '')}@{self.config.get('server', '')}:{self.config.get('port', '')}")
+            
+            # 如果未指定语音文件，但config中提供了语音文件路径，则使用它
+            if not voice_file and 'voice_file' in self.config:
+                voice_file = self.config['voice_file']
+                logger.info(f"使用配置中的语音文件: {voice_file}")
                 
             # 如果未指定响应语音文件，且config中有tts_text，则生成语音文件
             if not response_voice_file and 'tts_text' in self.config:                
@@ -674,27 +786,12 @@ class SIPCaller:
                     logger.error(f"TTS语音生成失败: {e}")
                     import traceback
                     logger.error(f"详细错误: {traceback.format_exc()}")
-
-            # 构建SIP URI
-            if number.startswith("sip:"):
-                # 已经是完整的SIP URI
-                sip_uri = number
-                logger.info(f"使用原始SIP URI: {sip_uri}")
-            else:
-                # 清理号码，只保留数字和拨号字符
-                clean_number = ''.join(c for c in number if c.isdigit() or c in ['+', '*', '#'])
-                
-                # 构建完整SIP URI
-                sip_uri = f"sip:{clean_number}@{self.config['server']}:{self.config['port']}"
-                logger.info(f"构建SIP URI: {sip_uri}")
-            
-            # 详细日志
-            logger.info(f"=== 开始拨号 ===")
-            logger.info(f"目标号码: {number}")
-            logger.info(f"SIP URI: {sip_uri}")
-            logger.info(f"SIP账户: {self.config['username']}@{self.config['server']}:{self.config['port']}")
+                    
+            # 记录语音文件信息
             if voice_file:
                 logger.info(f"语音文件: {voice_file}")
+            if response_voice_file:
+                logger.info(f"响应语音文件: {response_voice_file}")
             
             # 创建通话对象，并传入电话号码和响应语音文件
             call = SIPCall(self.acc, voice_file, self.whisper_model, number, response_voice_file)
@@ -703,69 +800,25 @@ class SIPCaller:
             call.response_configs = self.response_configs
             
             # 设置呼叫参数
-            call_prm = pj.CallOpParam(True)  # 使用默认值
-            call_prm.opt.audioCount = 1
-            call_prm.opt.videoCount = 0
+            call_param = pj.CallOpParam(True)
             
-            # 开始拨号
+            # 发送拨号请求
             logger.info(f"发送拨号请求: {sip_uri}")
-            call.makeCall(sip_uri, call_prm)
-            logger.info("拨号请求已发送")
+            call.makeCall(sip_uri, call_param)
             
+            # 更新当前通话
             self.current_call = call
             self.phone_number = number
             
-            # 等待呼叫状态变化
+            logger.info("拨号请求已发送")
             logger.info("等待呼叫状态变化...")
-            for i in range(10):
-                if not call.isActive():
-                    logger.warning(f"呼叫已不再活跃 [{i}秒]")
-                    break
-                    
-                try:
-                    ci = call.getInfo()
-                    state_names = {
-                        pj.PJSIP_INV_STATE_NULL: "NULL",
-                        pj.PJSIP_INV_STATE_CALLING: "CALLING",
-                        pj.PJSIP_INV_STATE_INCOMING: "INCOMING",
-                        pj.PJSIP_INV_STATE_EARLY: "EARLY",
-                        pj.PJSIP_INV_STATE_CONNECTING: "CONNECTING",
-                        pj.PJSIP_INV_STATE_CONFIRMED: "CONFIRMED",
-                        pj.PJSIP_INV_STATE_DISCONNECTED: "DISCONNECTED"
-                    }
-                    state_name = state_names.get(ci.state, f"未知状态({ci.state})")
-                    
-                    logger.info(f"呼叫状态 [{i}秒]: {state_name}, 状态码: {ci.lastStatusCode}, 原因: {ci.lastReason}")
-                    
-                    # 如果通话已确认
-                    if ci.state == pj.PJSIP_INV_STATE_CONFIRMED:
-                        logger.info("通话已接通")
-                        break
-                        
-                    # 如果通话已断开
-                    if ci.state == pj.PJSIP_INV_STATE_DISCONNECTED:
-                        logger.error(f"通话已断开: 状态码={ci.lastStatusCode}, 原因={ci.lastReason}")
-                        return False
-                except Exception as e:
-                    logger.warning(f"获取呼叫状态时出错: {e}")
-                    
-                time.sleep(1)
-                
-            logger.info("呼叫过程完成")
-            return self.current_call and self.current_call.isActive()
-                
-        except pj.Error as e:
-            logger.error(f"拨打电话失败: {e}")
-            # 输出详细错误信息
-            if hasattr(e, 'status') and hasattr(e, 'reason'):
-                logger.error(f"SIP错误状态: {e.status}, 原因: {e.reason}")
-            else:
-                logger.error(f"完整错误信息: {str(e)}")
-            return False
+            
+            return True
+            
         except Exception as e:
-            logger.error(f"拨号过程中发生未知错误: {e}")
+            logger.error(f"拨打电话失败: {e}")
             import traceback
-            logger.error(f"错误详情: {traceback.format_exc()}")
+            logger.error(f"详细错误: {traceback.format_exc()}")
             return False
 
     def hangup(self):
@@ -807,441 +860,3 @@ class SIPCaller:
             logger.error(f"停止SIP服务失败: {e}")
             self.acc = None
             self.ep = None 
-
-class MyAudioMediaPort(pj.AudioMediaPort):
-    """自定义音频媒体端口类，用于实时转录"""
-    def __init__(self, whisper_model=None, call=None, response_configs=None, tts_manager=None):
-        pj.AudioMediaPort.__init__(self)
-        self.whisper_model = whisper_model
-        self.realtime_chunks_dir = "realtime_chunks"
-        self.transcription_active = False
-        self.current_chunk_file = None
-        self.chunk_recorder = None
-        self.is_chunk_recording = False
-        self.buffer = bytearray()
-        self.buffer_size = 0
-        self.last_transcription_time = 0
-        self.chunk_duration = 0.3  # 降低到0.3秒，提高识别频率
-        self.sample_rate = 8000
-        self.bytes_per_sample = 2  # 16位PCM
-        self.transcription_thread = None
-        self.call = call
-        self.silence_threshold = 150  # 进一步降低静音阈值，提高灵敏度
-        self.silence_duration = 0.5  # 降低到0.5秒，更快识别句子结束
-        self.last_sound_time = 0  # 上次检测到声音的时间
-        self.has_detected_speech = False  # 是否检测到过语音
-        self.speech_ended = False  # 对方是否说完第一句话
-        self.should_play_response = False  # 是否应该播放回复
-        self.last_speech_time = 0  # 上次检测到语音结束的时间
-        self.process_lock = threading.Lock()  # 添加锁以避免线程冲突
-        self.accumulated_speech = ""  # 累积的语音识别结果
-        self.response_configs = response_configs or {}  # 回复配置
-        self.has_generated_response = False  # 是否已生成回复
-        self.min_buffer_size = 400  # 降低到400字节，处理更短的语音片段
-        self.max_silence_seconds = 2  # 降低到2秒，更快触发回复
-        self.speech_segments = []  # 记录语音片段，用于分析对话
-        self.debug_frames = True  # 开启帧调试信息以帮助排查问题
-        self.last_segment_time = 0  # 最后一个片段的处理时间
-        self.force_process_interval = 1.0  # 降低到1秒，确保更频繁地处理数据
-        self.intermediate_results = True  # 是否输出中间结果
-        self.tts_manager = tts_manager  # TTS管理器引用
-        self.energy_threshold = 20  # 降低能量阈值到20，更敏感地捕获声音
-        self.last_process_time = 0  # 上次处理时间
-        self.buffer_chunks = []  # 存储多个音频片段，用于连续处理
-        self.max_buffer_chunks = 5  # 最多存储5个片段
-        
-        # 创建转录文件夹
-        os.makedirs(self.realtime_chunks_dir, exist_ok=True)
-    
-    def _initialize_resources(self):
-        """初始化资源"""
-        try:
-            # 清空之前的临时文件
-            for f in os.listdir(self.realtime_chunks_dir):
-                try:
-                    os.remove(os.path.join(self.realtime_chunks_dir, f))
-                except:
-                    pass
-                
-            self.buffer = bytearray()
-            self.buffer_size = 0
-            self.last_transcription_time = time.time()
-            logger.info("实时转录资源已初始化")
-        except Exception as e:
-            logger.error(f"初始化实时转录资源时出错: {e}")
-    
-    def start_realtime_transcription(self, call):
-        """启动实时语音转录线程"""
-        self.call = call
-        self._initialize_resources()
-        
-        # 创建转录文件夹
-        os.makedirs(self.realtime_chunks_dir, exist_ok=True)
-        
-        # 清空之前的临时文件
-        for f in os.listdir(self.realtime_chunks_dir):
-            try:
-                os.remove(os.path.join(self.realtime_chunks_dir, f))
-            except:
-                pass
-        
-        # 设置状态变量
-        self.transcription_active = True
-        self.is_chunk_recording = False
-        self.chunk_recorder = None
-        self.current_chunk_file = None
-        
-        # 获取媒体
-        if not call:
-            logger.error("无法启动转录：未提供有效的通话对象")
-            return False
-        
-        try:
-            # 不使用音频媒体直接传输，而是在回调中注册本地回调来处理
-            logger.info("已启用实时转录，将在音频回调中处理数据...")
-            
-            # 启动处理线程
-            self.transcription_thread = threading.Thread(
-                target=self._process_audio_data_loop,
-                daemon=True
-            )
-            self.transcription_thread.start()
-            
-            # 注册通话中音频数据的回调处理，在onCallMediaState中实现
-            logger.info("实时转录准备就绪，等待音频数据...")
-            return True
-                
-        except Exception as e:
-            logger.error(f"启动实时转录时出错: {e}")
-            import traceback
-            logger.error(f"详细错误: {traceback.format_exc()}")
-        
-        return False
-
-    def _process_audio_data_loop(self):
-        """处理音频数据的线程循环，不调用PJSIP API"""
-        logger.info("开始音频处理循环")
-        try:
-            continuous_silence_time = 0  # 连续静音时间计数
-            last_process_time = time.time()
-            self.last_segment_time = time.time()
-            self.last_process_time = time.time()
-            
-            # 主循环
-            while self.transcription_active:
-                current_time = time.time()
-                time_since_last_process = current_time - last_process_time
-                time_since_last_segment = current_time - self.last_segment_time
-                
-                with self.process_lock:
-                    # 检查是否应该处理当前缓冲区
-                    should_process = False
-                    
-                    # 情况1: 有足够数据且经过了足够的时间
-                    if time_since_last_process >= self.chunk_duration and self.buffer_size > self.min_buffer_size:
-                        should_process = True
-                        logger.debug(f"处理数据：经过了{time_since_last_process:.1f}秒且缓冲区有{self.buffer_size}字节")
-                    
-                    # 情况2: 缓冲区已经很大了，立即处理
-                    elif self.buffer_size > 4000:  # 约0.25秒@8kHz、16位、单声道，降低阈值
-                        should_process = True
-                        logger.debug(f"处理数据：缓冲区已累积{self.buffer_size}字节，立即处理")
-                    
-                    # 情况3: 距离上次分段识别已经很久，即使数据较少也尝试处理
-                    elif time_since_last_segment > self.force_process_interval and self.buffer_size > 200:
-                        should_process = True
-                        logger.debug(f"处理数据：距离上次分段已{time_since_last_segment:.1f}秒，强制处理")
-                    
-                    # 如果应该处理缓冲区数据
-                    if should_process:
-                        # 重置静音计数器，因为正在处理数据
-                        continuous_silence_time = 0
-                        
-                        # 转录当前数据块
-                        result_text = self._process_buffer_directly()
-                        last_process_time = current_time
-                        self.last_process_time = current_time
-                        
-                        # 如果有识别结果，更新最后分段时间
-                        if result_text:
-                            self.last_segment_time = current_time
-                            
-                            # 输出中间识别结果，不等到说话结束
-                            if self.intermediate_results:
-                                logger.info(f"实时识别中: {self.accumulated_speech}")
-                    
-                    # 检查是否为静音或对方是否已停止说话
-                    elif self.has_detected_speech:
-                        # 如果缓冲区较小，可能是静音
-                        if self.buffer_size < self.silence_threshold:
-                            # 如果连续静音时间超过阈值，判断为说话结束
-                            if current_time - self.last_sound_time > self.silence_duration:
-                                if not self.speech_ended:
-                                    logger.info("检测到对方说话停顿")
-                                    
-                                    # 处理当前缓冲区中的数据
-                                    if self.buffer_size > 0:
-                                        self._process_buffer_directly()
-                                    
-                                    continuous_silence_time += time_since_last_process
-                                    
-                                    # 如果静音超过最大阈值，认为是完全结束说话
-                                    if continuous_silence_time > self.max_silence_seconds:
-                                        self.speech_ended = True
-                                        self.last_speech_time = current_time
-                                        self.should_play_response = True
-                                        
-                                        # 输出完整的转录结果
-                                        if self.accumulated_speech:
-                                            logger.info(f"完整识别结果: {self.accumulated_speech}")
-                                            
-                                            # 根据转录结果匹配回复
-                                            if not self.has_generated_response:
-                                                self._generate_response_from_text(self.accumulated_speech)
-                                        
-                                        # 通知SIPCall对象播放回复
-                                        if self.call and hasattr(self.call, "play_response_after_speech"):
-                                            threading.Thread(target=self.call.play_response_after_speech, daemon=True).start()
-                        else:
-                            # 重置静音计数器，因为检测到声音
-                            continuous_silence_time = 0
-                
-                time.sleep(0.01)  # 再次减少休眠时间，提高响应速度
-                
-        except Exception as e:
-            logger.error(f"音频处理循环出错: {e}")
-            import traceback
-            logger.error(f"详细错误: {traceback.format_exc()}")
-        finally:
-            self.transcription_active = False
-            logger.info("音频处理循环已结束")
-    
-    def _process_buffer_directly(self):
-        """直接处理当前缓冲区中的音频数据进行转录，完全在内存中进行"""
-        if not self.buffer or self.buffer_size < self.min_buffer_size:
-            return None
-            
-        try:
-            # 更新最后一次检测到声音的时间
-            self.last_sound_time = time.time()
-            if not self.has_detected_speech:
-                self.has_detected_speech = True
-                logger.info("检测到对方开始说话")
-            
-            # 使用Whisper实时转录
-            if self.whisper_model:
-                # 创建内存中的音频数据，无需写入临时文件
-                import io
-                import numpy as np
-                
-                # 将PCM数据转换为numpy数组
-                audio_data = np.frombuffer(bytes(self.buffer), dtype=np.int16)
-                
-                # 记录音频片段大小，用于调试
-                logger.debug(f"处理音频片段: {len(audio_data)} 采样点 ({self.buffer_size} 字节)")
-                
-                # 简单能量检测，避免处理纯静音
-                energy = np.mean(np.abs(audio_data))
-                logger.debug(f"音频片段能量值: {energy}")
-                
-                if energy < self.energy_threshold:
-                    logger.debug(f"跳过静音片段，能量值: {energy}")
-                    self.buffer = bytearray()
-                    self.buffer_size = 0
-                    return None
-                
-                # 转换为float32并归一化到[-1, 1]区间
-                audio_float = audio_data.astype(np.float32) / 32768.0
-                
-                # 调用Whisper API直接处理内存中的音频数据
-                try:
-                    # 使用shorter参数以更快获得结果
-                    result = self.whisper_model.transcribe(
-                        audio_float, 
-                        sampling_rate=self.sample_rate,
-                        task="transcribe",
-                        language="zh",
-                        fp16=False,  # 使用更精确的处理
-                        verbose=False  # 减少输出
-                    )
-                    
-                    text = result.get('text', '').strip()
-                    
-                    # 增加日志输出识别过程
-                    logger.info(f"Whisper识别完成，音频长度: {len(audio_float)/self.sample_rate:.2f}秒, 识别结果长度: {len(text)}")
-                        
-                    if text:
-                        # 记录语音片段和识别结果
-                        self.speech_segments.append({
-                            'timestamp': time.time(),
-                            'text': text,
-                            'energy': energy,
-                            'buffer_size': self.buffer_size
-                        })
-                        
-                        logger.info(f"实时识别片段: {text}")
-                        
-                        # 累积转录结果，避免重复
-                        if self.accumulated_speech:
-                            # 检查是否是重复内容，或与已有内容相似度高
-                            if text not in self.accumulated_speech[-len(text)*2:]:
-                                # 添加适当的空格或标点进行分隔
-                                if not (self.accumulated_speech.endswith('.') or 
-                                       self.accumulated_speech.endswith('!') or 
-                                       self.accumulated_speech.endswith('?') or
-                                       self.accumulated_speech.endswith('。') or
-                                       self.accumulated_speech.endswith('！') or
-                                       self.accumulated_speech.endswith('？')):
-                                    # 如果上一个文本没有以标点符号结束，添加空格
-                                    self.accumulated_speech += " "
-                                self.accumulated_speech += text
-                        else:
-                            self.accumulated_speech = text
-                            
-                        # 返回识别到的文本，便于外部处理
-                        return text
-                    else:
-                        logger.debug("Whisper识别结果为空")
-                except Exception as e:
-                    logger.error(f"Whisper识别处理出错: {e}")
-                    import traceback
-                    logger.error(traceback.format_exc())
-            
-            # 清空缓冲区，准备接收新的音频数据
-            self.buffer = bytearray()
-            self.buffer_size = 0
-            return None
-                
-        except Exception as e:
-            logger.error(f"实时转录处理出错: {e}")
-            import traceback
-            logger.error(f"详细错误: {traceback.format_exc()}")
-            # 出错时也清空缓冲区，避免数据堆积
-            self.buffer = bytearray()
-            self.buffer_size = 0
-            return None
-
-    def onFrameRequested(self, frame):
-        """当需要音频帧时调用（源）"""
-        # 作为源端口，这里不需要实现任何功能
-        pass
-        
-    def onFrameReceived(self, frame):
-        """当接收到音频帧时调用（接收器）"""
-        if not self.transcription_active:
-            return
-            
-        try:
-            # 获取帧数据
-            frame_data = frame.buf
-            frame_len = frame.size
-            
-            # 检查是否有足够的数据进行处理
-            if frame_len <= 0:
-                return
-                
-            # 输出帧信息，用于调试（可选）
-            if self.debug_frames and random.random() < 0.05:  # 增加到5%的帧显示
-                # 简单计算当前帧的能量
-                import numpy as np
-                frame_array = np.frombuffer(bytes(frame_data[:frame_len]), dtype=np.int16)
-                energy = np.mean(np.abs(frame_array))
-                logger.debug(f"接收音频帧: {frame_len} 字节, 能量: {energy:.2f}")
-                
-                # 检查距离上次处理的时间
-                current_time = time.time()
-                time_since_last_process = current_time - self.last_process_time
-                logger.debug(f"距离上次处理时间: {time_since_last_process:.3f}秒")
-                
-            with self.process_lock:
-                # 将帧数据添加到缓冲区
-                self.buffer.extend(frame_data[:frame_len])
-                self.buffer_size += frame_len
-                
-                # 检查是否需要强制处理（如果太长时间没有处理）
-                current_time = time.time()
-                if current_time - self.last_process_time > 1.5 and self.buffer_size > 1000:
-                    # 在另一个线程中处理，避免阻塞音频帧接收
-                    process_thread = threading.Thread(
-                        target=self._force_process_buffer,
-                        daemon=True
-                    )
-                    process_thread.start()
-            
-        except Exception as e:
-            logger.error(f"处理接收到的音频帧时出错: {e}")
-            
-    def _force_process_buffer(self):
-        """强制处理当前缓冲区"""
-        with self.process_lock:
-            if self.buffer_size > 0:
-                logger.info(f"强制处理当前缓冲区: {self.buffer_size} 字节")
-                self._process_buffer_directly()
-                self.last_process_time = time.time()
-
-    def _generate_response_from_text(self, text):
-        """根据识别出的文本生成回复"""
-        try:
-            logger.info(f"根据文本生成回复: {text}")
-            self.has_generated_response = True
-            
-            # 匹配回复规则
-            response_text = None
-            matched_rule = None
-            
-            # 检查是否有匹配规则
-            if self.response_configs and 'rules' in self.response_configs:
-                for rule in self.response_configs['rules']:
-                    if 'keywords' in rule and 'response' in rule:
-                        # 检查关键词是否在识别文本中
-                        keywords = rule['keywords']
-                        if not isinstance(keywords, list):
-                            keywords = [keywords]
-                            
-                        for keyword in keywords:
-                            if keyword.lower() in text.lower():
-                                response_text = rule['response']
-                                matched_rule = keyword
-                                logger.info(f"匹配到关键词 '{keyword}'，回复: {response_text}")
-                                break
-                        
-                        if response_text:
-                            break
-            
-            # 如果没有匹配到任何规则，使用默认回复
-            if not response_text:
-                if self.response_configs and 'default_response' in self.response_configs:
-                    response_text = self.response_configs['default_response']
-                    logger.info(f"使用默认回复: {response_text}")
-                else:
-                    response_text = "谢谢您的来电，我们已收到您的信息。"
-                    logger.info(f"使用系统默认回复: {response_text}")
-            
-            # 设置TTS参数
-            tts_voice = self.response_configs.get('tts_voice', 'zh-CN-XiaoxiaoNeural')
-            
-            # 获取TTS管理器
-            tts_manager = None
-            if hasattr(self, 'tts_manager') and self.tts_manager:
-                tts_manager = self.tts_manager
-            elif hasattr(self.call, 'tts_manager') and self.call.tts_manager:
-                tts_manager = self.call.tts_manager
-                
-            if not tts_manager:
-                logger.warning("未找到TTS管理器，使用默认方法生成语音")
-                # 创建临时TTS管理器
-                tts_manager = TTSManager()
-            
-            # 使用TTS管理器生成语音
-            tts_file = tts_manager.generate_tts_sync(response_text, tts_voice)
-            logger.info(f"生成响应语音: {tts_file}")
-            
-            # 设置生成的语音文件为响应语音
-            if self.call:
-                self.call.response_voice_file = tts_file
-                logger.info(f"已设置响应语音文件: {tts_file}")
-            
-        except Exception as e:
-            logger.error(f"生成回复时出错: {e}")
-            import traceback
-            logger.error(f"详细错误: {traceback.format_exc()}")

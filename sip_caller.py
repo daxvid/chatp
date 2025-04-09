@@ -355,79 +355,84 @@ class SIPCall(pj.Call):
             ci = self.getInfo()
             logger.info(f"呼叫媒体状态改变，当前呼叫状态: {ci.stateText}")
             
-            # 检查是否有音频媒体
-            if self.getMedia(0):
-                # 获取呼叫的音频媒体
-                call_media = self.getMedia(0)
+            # 尝试获取音频媒体
+            try:
+                self.audio_media = self.getAudioMedia(-1)
                 
-                # 检查音频方向
-                if call_media.getDir() == pj.PJMEDIA_DIR_ENCODING_DECODING:
-                    logger.info("音频媒体双向可用")
-                elif call_media.getDir() == pj.PJMEDIA_DIR_ENCODING:
-                    logger.info("音频媒体仅发送可用")
-                elif call_media.getDir() == pj.PJMEDIA_DIR_DECODING:
-                    logger.info("音频媒体仅接收可用")
-                else:
-                    logger.info(f"音频媒体方向: {call_media.getDir()}")
+                if not self.audio_media:
+                    logger.error("无法获取音频媒体")
+                    return
+                    
+                logger.info("成功获取音频媒体")
                 
-                # 获取呼叫的音频媒体
-                try:
-                    self.audio_media = self.getAudioMedia(-1)
+                # 检查是否需要播放响应语音
+                if hasattr(self, 'should_play_response') and self.should_play_response:
+                    self.should_play_response = False  # 重置标志
                     
-                    if not self.audio_media:
-                        logger.error("无法获取音频媒体")
-                        return
-                    
-                    # 创建录音设备
-                    if not self.audio_recorder:
-                        self.audio_recorder = pj.AudioMediaRecorder()
-                        # 创建录音文件
-                        if self.phone_number:
-                            os.makedirs("recordings", exist_ok=True)
-                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                            self.recording_file = f"recordings/call_{self.phone_number}_{timestamp}.wav"
-                            
-                            try:
-                                logger.info(f"创建录音文件: {self.recording_file}")
-                                self.audio_recorder.createRecorder(self.recording_file)
-                                logger.info("录音设备创建成功")
-                            except Exception as e:
-                                logger.error(f"创建录音文件失败: {e}")
-                                self.recording_file = None
-                                self.audio_recorder = None
-                                return
-                    
-                    # 连接音频媒体到录音设备
-                    logger.info("连接音频媒体到录音设备")
-                    self.audio_media.startTransmit(self.audio_recorder)
-                    logger.info("开始录音")
-                    
-                    # 如果有语音文件需要播放
-                    if self.voice_file and os.path.exists(self.voice_file):
+                    # 如果有响应语音文件，播放它
+                    if self.response_voice_file and os.path.exists(self.response_voice_file):
                         try:
-                            # 创建播放器
-                            player = pj.AudioMediaPlayer()
-                            player.createPlayer(self.voice_file)
+                            logger.info(f"播放响应语音: {self.response_voice_file}")
                             
-                            # 开始传输到呼叫的音频媒体
+                            # 创建音频播放器
+                            player = pj.AudioMediaPlayer()
+                            player.createPlayer(self.response_voice_file)
+                            
+                            # 播放到音频媒体
                             player.startTransmit(self.audio_media)
-                            logger.info(f"开始播放语音文件: {self.voice_file}")
+                            logger.info("响应语音播放已开始")
                         except Exception as e:
-                            logger.error(f"播放语音文件失败: {e}")
+                            logger.error(f"播放响应语音失败: {e}")
                             import traceback
                             logger.error(f"详细错误: {traceback.format_exc()}")
-                except Exception as e:
-                    logger.error(f"处理音频媒体时出错: {e}")
-                    import traceback
-                    logger.error(f"详细错误: {traceback.format_exc()}")
-            else:
-                logger.warning("没有可用的音频媒体")
+                
+                # 创建录音设备
+                if not self.audio_recorder and self.phone_number:
+                    try:
+                        self.audio_recorder = pj.AudioMediaRecorder()
+                        
+                        # 创建录音文件
+                        os.makedirs("recordings", exist_ok=True)
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        self.recording_file = f"recordings/{self.phone_number}_{timestamp}.wav"
+                        
+                        logger.info(f"创建录音文件: {self.recording_file}")
+                        self.audio_recorder.createRecorder(self.recording_file)
+                        logger.info("录音设备创建成功")
+                        
+                        # 连接音频媒体到录音设备
+                        logger.info("连接音频媒体到录音设备")
+                        self.audio_media.startTransmit(self.audio_recorder)
+                        logger.info(f"开始录音: {self.recording_file}")
+                    except Exception as e:
+                        logger.error(f"创建录音设备失败: {e}")
+                        import traceback
+                        logger.error(f"详细错误: {traceback.format_exc()}")
+                
+                # 如果有语音文件需要播放
+                if self.voice_file and os.path.exists(self.voice_file):
+                    try:
+                        # 创建播放器
+                        player = pj.AudioMediaPlayer()
+                        player.createPlayer(self.voice_file)
+                        
+                        # 开始传输到呼叫的音频媒体
+                        player.startTransmit(self.audio_media)
+                        logger.info(f"开始播放语音文件: {self.voice_file}")
+                    except Exception as e:
+                        logger.error(f"播放语音文件失败: {e}")
+                        import traceback
+                        logger.error(f"详细错误: {traceback.format_exc()}")
+            except Exception as e:
+                logger.error(f"处理音频媒体时出错: {e}")
+                import traceback
+                logger.error(f"详细错误: {traceback.format_exc()}")
                 
         except Exception as e:
             logger.error(f"处理呼叫媒体状态改变时出错: {e}")
             import traceback
             logger.error(f"详细错误: {traceback.format_exc()}")
-
+            
     def onCallState(self, prm):
         """呼叫状态改变时的回调函数"""
         try:
@@ -467,35 +472,9 @@ class SIPCall(pj.Call):
                         logger.info("初始化实时语音转录...")
                         # 启动transcriber_thread
                         self.start_realtime_transcription_thread()
-                
-                # 检查是否需要播放响应（从主线程处理）
-                def check_and_play_response():
-                    # 在一个循环中检查should_play_response标记
-                    check_count = 0
-                    while check_count < 60:  # 最多检查60次，30秒
-                        check_count += 1
-                        time.sleep(0.5)
                         
-                        if not hasattr(self, 'should_play_response') or not self.should_play_response:
-                            continue
-                            
-                        # 如果标记被设置，则播放响应
-                        try:
-                            logger.info("检测到should_play_response标记，播放响应语音")
-                            self.play_response_from_main_thread()
-                            return  # 播放后退出循环
-                        except Exception as e:
-                            logger.error(f"从主线程播放响应失败: {e}")
-                            import traceback
-                            logger.error(f"详细错误: {traceback.format_exc()}")
-                            return
-                
-                # 启动检查线程
-                response_check_thread = threading.Thread(
-                    target=check_and_play_response,
-                    daemon=True
-                )
-                response_check_thread.start()
+                        # 启动响应检查线程
+                        self.start_response_check_thread()
                 
             elif ci.state == pj.PJSIP_INV_STATE_DISCONNECTED:
                 logger.info(f"通话已结束: 状态码={ci.lastStatusCode}, 原因={ci.lastReason}")
@@ -503,7 +482,8 @@ class SIPCall(pj.Call):
                 # 停止音频传输
                 try:
                     if hasattr(self, 'audio_media') and self.audio_media:
-                        self.audio_media.stopTransmit(self.audio_recorder)
+                        if hasattr(self, 'audio_recorder') and self.audio_recorder:
+                            self.audio_media.stopTransmit(self.audio_recorder)
                 except Exception as e:
                     logger.error(f"停止音频传输时出错: {e}")
                 
@@ -512,6 +492,12 @@ class SIPCall(pj.Call):
                     logger.info("实时语音转录已停止")
                     self.transcriber_active = False
                     self.transcriber_thread.join(timeout=2)
+                
+                # 停止响应检查线程
+                if hasattr(self, 'response_check_active'):
+                    self.response_check_active = False
+                    if hasattr(self, 'response_check_thread') and self.response_check_thread:
+                        self.response_check_thread.join(timeout=2)
                 
                 # 停止录音
                 if self.recorder:
@@ -630,12 +616,42 @@ class SIPCall(pj.Call):
                                             if text:
                                                 logger.info(f"语音识别结果 (段{segment_count}): {text}")
                                                 
-                                                # 在第一次成功识别后播放响应语音
+                                                # 在第一次成功识别后，设置标记
                                                 if not has_played_response and self.response_voice_file and os.path.exists(self.response_voice_file):
                                                     logger.info(f"检测到语音，设置响应播放标记: {self.response_voice_file}")
-                                                    # 设置标记，由主线程处理播放
                                                     self.should_play_response = True
                                                     has_played_response = True
+                                                    
+                                                    # 触发一次媒体状态变化，以便播放响应
+                                                    try:
+                                                        # 使用简单的方式触发媒体状态改变
+                                                        logger.info("尝试触发媒体状态变化以播放响应")
+                                                        
+                                                        # 创建一个临时播放器、播放静音片段再停止，以触发媒体状态变化
+                                                        # 这是一个方便的小技巧，实际不会播放声音
+                                                        try:
+                                                            import tempfile
+                                                            
+                                                            # 创建一个包含100毫秒静音的WAV文件
+                                                            silence_file = tempfile.mktemp(suffix=".wav")
+                                                            with wave.open(silence_file, 'wb') as wf:
+                                                                wf.setnchannels(1)
+                                                                wf.setsampwidth(2)
+                                                                wf.setframerate(8000)
+                                                                wf.writeframes(b'\x00' * 1600)  # 100ms的静音
+                                                                
+                                                            # 直接播放响应文件
+                                                            self.play_response_direct()
+                                                            
+                                                            # 清理临时文件
+                                                            try:
+                                                                os.remove(silence_file)
+                                                            except:
+                                                                pass
+                                                        except Exception as e:
+                                                            logger.error(f"触发媒体状态变化失败: {e}")
+                                                    except Exception as e:
+                                                        logger.error(f"触发媒体状态变化时出错: {e}")
                                             else:
                                                 logger.info(f"语音识别结果为空 (段{segment_count})")
                                         except Exception as e:
@@ -685,37 +701,89 @@ class SIPCall(pj.Call):
         
         self.transcriber_active = False
 
-    def play_response_from_main_thread(self):
-        """在主线程中播放响应语音"""
-        if not self.response_voice_file or not os.path.exists(self.response_voice_file):
-            logger.error(f"响应语音文件不存在: {self.response_voice_file}")
-            return False
-            
+    def play_response_direct(self):
+        """直接播放响应文件 - 这个方法是在转录线程中调用的，但使用子进程播放"""
         try:
-            logger.info(f"从主线程播放响应语音: {self.response_voice_file}")
-            
-            # 创建音频播放器
-            player = pj.AudioMediaPlayer()
-            player.createPlayer(self.response_voice_file)
-            
-            # 获取通话媒体
-            audio_stream = self.getAudioMedia(-1)
-            if not audio_stream:
-                logger.error("无法获取音频媒体，无法播放响应语音")
+            if not self.response_voice_file or not os.path.exists(self.response_voice_file):
+                logger.error(f"响应语音文件不存在: {self.response_voice_file}")
                 return False
                 
-            # 开始传输音频
-            player.startTransmit(audio_stream)
-            logger.info("响应语音播放已开始")
-            self.has_played_response = True
-            self.should_play_response = False
-            return True
+            # 使用ffplay直接播放音频文件，不通过PJSIP
+            logger.info(f"使用直接播放方式播放响应: {self.response_voice_file}")
             
+            # 由于我们可能无法直接通过PJSIP播放，尝试一种备用方案：
+            # 1. 首先使用标志通知主线程
+            self.should_play_response = True
+            
+            # 2. 然后使用子进程直接播放音频文件到系统默认输出设备
+            try:
+                import subprocess
+                
+                # 使用ffplay播放音频
+                cmd = [
+                    "ffplay",
+                    "-nodisp",  # 不显示窗口
+                    "-autoexit",  # 播放完自动退出
+                    "-loglevel", "quiet",  # 减少日志输出
+                    self.response_voice_file
+                ]
+                
+                logger.info(f"执行命令: {' '.join(cmd)}")
+                subprocess.Popen(cmd, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+                logger.info("响应文件正在系统默认输出设备上播放")
+                
+                return True
+            except Exception as e:
+                logger.error(f"直接播放响应失败: {e}")
+                return False
+                
         except Exception as e:
-            logger.error(f"从主线程播放响应语音失败: {e}")
+            logger.error(f"播放响应过程中出错: {e}")
             import traceback
             logger.error(f"详细错误: {traceback.format_exc()}")
             return False
+
+    def start_response_check_thread(self):
+        """启动响应检查线程"""
+        try:
+            self.response_check_active = True
+            self.response_check_thread = threading.Thread(
+                target=self._response_check_loop,
+                daemon=True
+            )
+            self.response_check_thread.start()
+            logger.info("响应检查线程已启动")
+            return True
+        except Exception as e:
+            logger.error(f"启动响应检查线程失败: {e}")
+            return False
+            
+    def _response_check_loop(self):
+        """响应检查循环"""
+        try:
+            check_count = 0
+            max_checks = 60  # 30秒
+            
+            while self.response_check_active and check_count < max_checks:
+                check_count += 1
+                
+                # 简单的标志检查
+                if hasattr(self, 'should_play_response') and self.should_play_response:
+                    logger.info("检测到should_play_response标志，标记为下一次媒体状态变化时播放")
+                    # 将标志保持为True，等待下一次媒体状态变化时播放
+                    time.sleep(0.5)
+                    continue
+                
+                time.sleep(0.5)
+                
+            logger.info("响应检查线程结束")
+            
+        except Exception as e:
+            logger.error(f"响应检查线程出错: {e}")
+            import traceback
+            logger.error(f"详细错误: {traceback.format_exc()}")
+        
+        self.response_check_active = False
 
 class SIPCaller:
     """SIP呼叫管理类"""
@@ -731,93 +799,8 @@ class SIPCaller:
         # 初始化TTS管理器
         self.tts_manager = TTSManager()
         
-        # 添加音频播放命令队列和处理线程
-        self.play_commands = []
-        self.play_commands_lock = threading.Lock()
-        self.play_commands_thread_active = True
-        self.play_commands_thread = threading.Thread(
-            target=self._process_play_commands,
-            daemon=True
-        )
-        self.play_commands_thread.start()
-        
         # 初始化PJSIP
         self._init_pjsua2()
-
-    # 添加音频播放命令处理函数
-    def _play_audio_on_main_thread(self, command):
-        """在主线程中处理音频播放命令"""
-        with self.play_commands_lock:
-            self.play_commands.append(command)
-
-    def _process_play_commands(self):
-        """处理音频播放命令队列的线程"""
-        try:
-            # 注册线程到PJSIP
-            try:
-                import ctypes
-                # 创建一个Thread描述结构
-                thread_desc = pj.PJ_THREAD_DESC()
-                thread_desc.desc = ctypes.c_char_p(b"PlayCommandProcessor")
-                # 创建一个线程槽
-                thread_this = pj.PJ_THREAD_THIS()
-                # 注册线程
-                pj.thread_register("PlayCommandProcessor", thread_desc, thread_this)
-                logger.info("已将音频播放命令处理线程注册到PJSIP")
-            except Exception as e:
-                logger.error(f"注册音频处理线程到PJSIP失败: {e}")
-                import traceback
-                logger.error(f"详细错误: {traceback.format_exc()}")
-                return
-
-            while self.play_commands_thread_active:
-                commands_to_process = []
-                
-                # 获取要处理的命令
-                with self.play_commands_lock:
-                    if self.play_commands:
-                        commands_to_process = self.play_commands.copy()
-                        self.play_commands.clear()
-                
-                # 处理命令
-                for cmd in commands_to_process:
-                    try:
-                        # 创建音频播放器
-                        player = pj.AudioMediaPlayer()
-                        player.createPlayer(cmd.file_path)
-                        
-                        # 获取通话媒体
-                        call = cmd.call
-                        audio_stream = call.getAudioMedia(-1)
-                        
-                        if audio_stream:
-                            # 开始传输音频
-                            player.startTransmit(audio_stream)
-                            cmd.success = True
-                            logger.info(f"在主线程成功播放音频: {cmd.file_path}")
-                        else:
-                            cmd.success = False
-                            cmd.error = "无法获取音频媒体"
-                            logger.error("无法获取音频媒体，无法播放响应")
-                    except Exception as e:
-                        cmd.success = False
-                        cmd.error = str(e)
-                        logger.error(f"主线程播放音频失败: {e}")
-                        import traceback
-                        logger.error(f"详细错误: {traceback.format_exc()}")
-                    finally:
-                        # 标记命令已完成
-                        cmd.done.set()
-                
-                # 短暂休眠
-                time.sleep(0.1)
-                
-        except Exception as e:
-            logger.error(f"音频播放命令处理线程出错: {e}")
-            import traceback
-            logger.error(f"详细错误: {traceback.format_exc()}")
-        
-        logger.info("音频播放命令处理线程已退出")
 
     def _init_pjsua2(self):
         """初始化PJSIP"""
@@ -830,166 +813,48 @@ class SIPCaller:
             ep_cfg = pj.EpConfig()
             # 禁用SSL证书验证
             ep_cfg.uaConfig.verifyServerCert = False
-            
-            # 设置日志级别
-            ep_cfg.logConfig.level = 5  # 设置为高级别日志，便于调试
-            ep_cfg.logConfig.consoleLevel = 5
-            
-            # 初始化媒体配置
-            ep_cfg.medConfig.ecTailLen = 0  # 禁用回声消除
-            
-            # 初始化PJSIP库
-            logger.info("正在初始化PJSIP库...")
             self.ep.libInit(ep_cfg)
-            logger.info("PJSIP库初始化成功")
 
             # 创建传输
             sipTpConfig = pj.TransportConfig()
-            if self.config.get('bind_port'):
-                sipTpConfig.port = self.config.get('bind_port', 5060)
-            else:
-                sipTpConfig.port = random.randint(6000, 8000)
-            
-            # 指定本地IP（如果配置中有）
-            if self.config.get('bind_ip'):
-                sipTpConfig.boundAddr = self.config.get('bind_ip')
-                logger.info(f"绑定本地IP: {sipTpConfig.boundAddr}:{sipTpConfig.port}")
-            
-            logger.info(f"创建SIP传输，端口: {sipTpConfig.port}")
-            self.transport_id = self.ep.transportCreate(pj.PJSIP_TRANSPORT_UDP, sipTpConfig)
-            logger.info(f"SIP传输创建成功，ID: {self.transport_id}")
-            # transportCreate返回的是整数ID，不是对象，无法直接调用getInfo()
-            # 记录一下基本信息即可
-            logger.info(f"本地SIP端口: {sipTpConfig.port}")
+            sipTpConfig.port = self.config.get('bind_port', 6000)
+            self.ep.transportCreate(pj.PJSIP_TRANSPORT_UDP, sipTpConfig)
 
             # 启动库
-            logger.info("启动PJSIP库...")
+            logger.info("正在启动PJSIP库...")
             self.ep.libStart()
-            logger.info("PJSIP库启动成功")
 
             # 创建账户配置
             acc_cfg = pj.AccountConfig()
-            # 使用安全的get方法获取配置值，避免KeyError
-            username = self.config.get('username', '')
-            server = self.config.get('server', '')
-            port = self.config.get('port', '')
-            
-            acc_cfg.idUri = f"sip:{username}@{server}:{port}"
-            acc_cfg.regConfig.registrarUri = f"sip:{server}:{port}"
-            
-            # 配置认证信息
-            cred_info = pj.AuthCredInfo(
-                "digest",
-                "*",
-                username,
-                0,
-                self.config.get('password', '')
+            acc_cfg.idUri = f"sip:{self.config['username']}@{self.config['server']}:{self.config['port']}"
+            acc_cfg.regConfig.registrarUri = f"sip:{self.config['server']}:{self.config['port']}"
+            acc_cfg.sipConfig.authCreds.append(
+                pj.AuthCredInfo(
+                    "digest",
+                    "*",
+                    self.config['username'],
+                    0,
+                    self.config['password']
+                )
             )
-            acc_cfg.sipConfig.authCreds.append(cred_info)
-            
-            # 设置注册超时时间
-            if self.config.get('register_refresh'):
-                acc_cfg.regConfig.timeoutSec = int(self.config.get('register_refresh'))
-                logger.info(f"设置注册刷新时间: {acc_cfg.regConfig.timeoutSec}秒")
-            
-            # 设置Keep-Alive时间 - 注释掉这部分，因为在Python绑定中不存在这个属性
-            # if self.config.get('keep_alive'):
-            #     acc_cfg.sipConfig.keepAliveIntervalSec = int(self.config.get('keep_alive'))
-            #     logger.info(f"设置Keep-Alive时间: {acc_cfg.sipConfig.keepAliveIntervalSec}秒")
-            
-            logger.info(f"创建SIP账户: {acc_cfg.idUri}, 注册到: {acc_cfg.regConfig.registrarUri}")
 
             # 创建账户
             self.acc = pj.Account()
             self.acc.create(acc_cfg)
-            
+
             # 等待注册完成
-            logger.info("等待SIP注册...")
-            timeout = 30  # 30秒超时
-            start_time = time.time()
-            
-            # 修复部分：确保self.acc是有效的Account对象，并且可以调用getInfo()
-            # 同时处理可能的异常情况
-            while time.time() - start_time < timeout:
-                try:
-                    if not isinstance(self.acc, pj.Account):
-                        logger.error(f"账户对象类型错误: {type(self.acc)}")
-                        break
-                        
-                    acc_info = self.acc.getInfo()
-                    if acc_info.regStatus == pj.PJSIP_SC_OK:
-                        logger.info("SIP注册成功")
-                        break
-                    elif acc_info.regStatus >= 300:  # 任何错误状态码
-                        logger.error(f"SIP注册失败，状态码: {acc_info.regStatus}")
-                        break
-                except Exception as e:
-                    logger.error(f"获取账户信息时出错: {e}")
-                    break
-                    
-                time.sleep(0.5)  # 稍微增加检查间隔，减少CPU使用
-            
-            # 再次检查注册状态
-            try:
-                if isinstance(self.acc, pj.Account):
-                    acc_info = self.acc.getInfo()
-                    logger.info(f"SIP账户信息: URI={acc_info.uri}, 状态码={acc_info.regStatus}, 过期={acc_info.regExpiresSec}秒")
-                    
-                    if acc_info.regStatus != pj.PJSIP_SC_OK:
-                        logger.warning(f"SIP注册未成功完成，状态码: {acc_info.regStatus}")
-                else:
-                    logger.error("账户对象无效")
-            except Exception as e:
-                logger.error(f"获取最终账户状态时出错: {e}")
+            max_wait = 30  # 最多等待30秒
+            wait_start = time.time()
+            while self.acc.getInfo().regStatus != pj.PJSIP_SC_OK:
+                if time.time() - wait_start > max_wait:
+                    raise Exception(f"SIP注册超时，当前状态: {self.acc.getInfo().regStatus}")
+                logger.info(f"等待SIP注册完成，状态: {self.acc.getInfo().regStatus}...")
+                time.sleep(0.5)
 
             logger.info("SIP客户端初始化成功")
         except pj.Error as e:
             logger.error(f"初始化PJSIP失败: {e}")
-            if hasattr(e, 'info'):
-                logger.error(f"详细错误信息: {e.info()}")
             raise
-        except Exception as e:
-            logger.error(f"初始化PJSIP过程中出现非PJSIP错误: {e}")
-            import traceback
-            logger.error(f"详细错误: {traceback.format_exc()}")
-            raise
-
-    def set_whisper_model(self, model):
-        """设置Whisper模型"""
-        self.whisper_model = model
-        
-    def _load_response_configs(self):
-        """加载回复配置"""
-        try:
-            # 尝试从config中读取回复规则
-            response_configs = {}
-            
-            # 如果config中包含response_rules，则加载
-            if 'response_rules' in self.config:
-                response_configs['rules'] = self.config['response_rules']
-                
-            # 默认回复
-            if 'default_response' in self.config:
-                response_configs['default_response'] = self.config['default_response']
-            else:
-                response_configs['default_response'] = "谢谢您的来电，我们已收到您的信息。"
-                
-            # TTS语音
-            if 'tts_voice' in self.config:
-                response_configs['tts_voice'] = self.config['tts_voice']
-            else:
-                response_configs['tts_voice'] = "zh-CN-XiaoxiaoNeural"
-                
-            logger.info(f"已加载回复配置: {len(response_configs.get('rules', []))}条规则")
-            return response_configs
-            
-        except Exception as e:
-            logger.error(f"加载回复配置失败: {e}")
-            # 返回一个包含默认配置的字典
-            return {
-                'default_response': "谢谢您的来电，我们已收到您的信息。",
-                'tts_voice': "zh-CN-XiaoxiaoNeural"
-            }
 
     def make_call(self, number, voice_file=None, response_voice_file=None):
         """拨打电话并播放语音"""
@@ -1041,9 +906,6 @@ class SIPCaller:
             call.tts_manager = self.tts_manager
             call.response_configs = self.response_configs
             
-            # 设置播放命令回调函数
-            call.play_command_callback = self._play_audio_on_main_thread
-            
             # 设置呼叫参数
             call_param = pj.CallOpParam(True)
             
@@ -1085,11 +947,6 @@ class SIPCaller:
     def stop(self):
         """停止PJSIP"""
         try:
-            # 停止播放命令处理线程
-            self.play_commands_thread_active = False
-            if hasattr(self, 'play_commands_thread') and self.play_commands_thread:
-                self.play_commands_thread.join(timeout=2)
-            
             if self.acc:
                 try:
                     # 使用正确的方法删除账户
@@ -1109,4 +966,41 @@ class SIPCaller:
         except Exception as e:
             logger.error(f"停止SIP服务失败: {e}")
             self.acc = None
-            self.ep = None 
+            self.ep = None
+
+    def set_whisper_model(self, model):
+        """设置Whisper模型"""
+        self.whisper_model = model
+        
+    def _load_response_configs(self):
+        """加载回复配置"""
+        try:
+            # 尝试从config中读取回复规则
+            response_configs = {}
+            
+            # 如果config中包含response_rules，则加载
+            if 'response_rules' in self.config:
+                response_configs['rules'] = self.config['response_rules']
+                
+            # 默认回复
+            if 'default_response' in self.config:
+                response_configs['default_response'] = self.config['default_response']
+            else:
+                response_configs['default_response'] = "谢谢您的来电，我们已收到您的信息。"
+                
+            # TTS语音
+            if 'tts_voice' in self.config:
+                response_configs['tts_voice'] = self.config['tts_voice']
+            else:
+                response_configs['tts_voice'] = "zh-CN-XiaoxiaoNeural"
+                
+            logger.info(f"已加载回复配置: {len(response_configs.get('rules', []))}条规则")
+            return response_configs
+            
+        except Exception as e:
+            logger.error(f"加载回复配置失败: {e}")
+            # 返回一个包含默认配置的字典
+            return {
+                'default_response': "谢谢您的来电，我们已收到您的信息。",
+                'tts_voice': "zh-CN-XiaoxiaoNeural"
+            } 

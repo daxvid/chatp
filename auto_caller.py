@@ -14,6 +14,7 @@ import wave
 import threading
 from datetime import datetime
 import ssl
+import struct  # Add struct import for binary data handling
 
 # 禁用全局SSL证书验证
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -245,6 +246,167 @@ class MyCall(pj.Call):
             # 转录音频
             if self.recording_file:
                 self.transcribe_audio()
+
+    def start_realtime_transcription(self):
+        """开始实时转录"""
+        try:
+            # 创建转录目录
+            os.makedirs("transcriptions", exist_ok=True)
+            
+            # 清理之前的临时文件
+            temp_files = [f for f in os.listdir() if f.startswith("temp_") and f.endswith(".wav")]
+            for temp_file in temp_files:
+                try:
+                    os.remove(temp_file)
+                    logger.debug(f"删除临时文件: {temp_file}")
+                except Exception as e:
+                    logger.warning(f"无法删除临时文件 {temp_file}: {e}")
+            
+            # 检查是否有有效的音频媒体
+            try:
+                if not self.getAudioVideoStream() or len(self.getAudioVideoStream()) == 0:
+                    logger.error("无法获取通话音频流，无法开始实时转录")
+                    return False
+                
+                audio_media = self.getAudioVideoStream()[0]
+                if not audio_media:
+                    logger.error("无法获取音频媒体，无法开始实时转录")
+                    return False
+                    
+                logger.info("开始实时转录...")
+                
+                # 创建并启动转录线程
+                self.transcription_running = True
+                self.transcription_thread = threading.Thread(
+                    target=self._transcription_loop,
+                    args=(audio_media,)
+                )
+                self.transcription_thread.daemon = True
+                self.transcription_thread.start()
+                
+                logger.info("实时转录已启动")
+                return True
+                
+            except Exception as e:
+                logger.error(f"获取音频流失败: {e}")
+                import traceback
+                logger.error(f"详细错误: {traceback.format_exc()}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"启动实时转录失败: {e}")
+            import traceback
+            logger.error(f"详细错误: {traceback.format_exc()}")
+            return False
+            
+    def _transcription_loop(self, audio_media):
+        """实时转录循环处理"""
+        try:
+            # 定义音频参数
+            SAMPLE_RATE = 16000  # Hz
+            CHUNK_SIZE = 1600  # 每100ms的样本
+            BUFFER_SECONDS = 5  # 缓冲区大小（秒）
+            TRANSCRIBE_INTERVAL = 2  # 转录间隔（秒）
+            
+            # 初始化音频缓冲区
+            audio_buffer = []
+            last_transcribe_time = time.time()
+            buffer_max_size = BUFFER_SECONDS * SAMPLE_RATE
+            
+            # 临时WAV文件计数
+            temp_file_count = 0
+            
+            logger.info(f"转录参数: 采样率={SAMPLE_RATE}Hz, 块大小={CHUNK_SIZE}, 缓冲区={BUFFER_SECONDS}秒")
+            
+            # 注册媒体端口以接收音频数据
+            port = pj.AudioMediaPort()
+            audio_media.startTransmit(port)
+            
+            # 转录循环
+            while self.transcription_running:
+                try:
+                    # 获取音频帧
+                    frame = port.getFrame()
+                    if frame:
+                        # 将PCM数据转换为numpy数组
+                        pcm_data = frame.buf
+                        samples = np.frombuffer(pcm_data, dtype=np.int16)
+                        
+                        # 添加到缓冲区
+                        audio_buffer.extend(samples)
+                        
+                        # 保持缓冲区大小
+                        if len(audio_buffer) > buffer_max_size:
+                            audio_buffer = audio_buffer[-buffer_max_size:]
+                        
+                        # 检查是否应该进行转录
+                        current_time = time.time()
+                        if current_time - last_transcribe_time >= TRANSCRIBE_INTERVAL and len(audio_buffer) > CHUNK_SIZE:
+                            # 创建临时WAV文件
+                            temp_file_name = f"temp_transcription_{temp_file_count}.wav"
+                            temp_file_count += 1
+                            
+                            # 将缓冲区数据写入WAV文件
+                            with wave.open(temp_file_name, 'wb') as wf:
+                                wf.setnchannels(1)
+                                wf.setsampwidth(2)  # 2 bytes = 16 bits
+                                wf.setframerate(SAMPLE_RATE)
+                                audio_data = np.array(audio_buffer, dtype=np.int16).tobytes()
+                                wf.writeframes(audio_data)
+                            
+                            # 使用Whisper转录
+                            try:
+                                result = self.whisper_model.transcribe(
+                                    temp_file_name,
+                                    language="zh",
+                                    fp16=False
+                                )
+                                
+                                transcription = result["text"].strip()
+                                if transcription:
+                                    logger.info(f"实时转录结果: {transcription}")
+                                    
+                                    # 保存转录结果到文件
+                                    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                                    transcription_file = f"transcriptions/transcription_{timestamp}.txt"
+                                    with open(transcription_file, 'w', encoding='utf-8') as f:
+                                        f.write(transcription)
+                                        
+                                    logger.debug(f"转录结果已保存到: {transcription_file}")
+                            except Exception as e:
+                                logger.error(f"转录过程中出错: {e}")
+                                
+                            # 尝试删除临时文件
+                            try:
+                                os.remove(temp_file_name)
+                            except Exception as e:
+                                logger.warning(f"无法删除临时文件 {temp_file_name}: {e}")
+                                
+                            last_transcribe_time = current_time
+                    
+                    # 小睡以减少CPU使用
+                    time.sleep(0.01)
+                    
+                except Exception as e:
+                    logger.error(f"转录循环中出错: {e}")
+                    time.sleep(0.5)  # 出错后稍微暂停
+            
+            # 清理
+            audio_media.stopTransmit(port)
+            logger.info("转录循环已停止")
+            
+        except Exception as e:
+            logger.error(f"转录线程出错: {e}")
+            import traceback
+            logger.error(f"详细错误: {traceback.format_exc()}")
+            
+    def stop_realtime_transcription(self):
+        """停止实时转录"""
+        if hasattr(self, 'transcription_running'):
+            self.transcription_running = False
+            if hasattr(self, 'transcription_thread') and self.transcription_thread:
+                self.transcription_thread.join(timeout=2.0)
+                logger.info("实时转录已停止")
 
 class AutoCaller:
     def __init__(self, config_path='config.yaml'):

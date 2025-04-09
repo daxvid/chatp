@@ -13,61 +13,10 @@ import struct
 import random
 import wave
 from datetime import datetime
+import concurrent.futures
 
 # 引入TTSManager
-try:
-    from tts_manager import TTSManager
-except ImportError:
-    # 如果TTSManager不可用，定义一个简单的替代实现
-    class TTSManager:
-        def __init__(self, cache_dir="tts_cache"):
-            """文本转语音管理器"""
-            if isinstance(cache_dir, dict):
-                # 兼容旧代码，如果传入的是配置字典
-                self.config = cache_dir
-                self.tts_voice = self.config.get('tts_voice', 'zh-CN-XiaoxiaoNeural')
-                self.cache_dir = "tts_cache"
-            else:
-                # 正常情况，传入的是缓存目录
-                self.cache_dir = cache_dir
-                self.config = {}
-                self.tts_voice = 'zh-CN-XiaoxiaoNeural'
-                
-            os.makedirs(self.cache_dir, exist_ok=True)
-            
-        async def _generate_speech_async(self, text, output_file, voice=None):
-            from edge_tts import Communicate
-            communicate = Communicate(text, voice or self.tts_voice)
-            await communicate.save(output_file)
-            
-        def generate_speech(self, text, output_file=None, voice=None):
-            """生成语音文件"""
-            import asyncio
-            import hashlib
-            
-            # 使用当前指定的voice或默认voice
-            voice = voice or self.tts_voice
-            
-            # 如果未指定输出文件，根据文本和语音生成MD5哈希作为文件名
-            if not output_file:
-                # 组合文本和语音，确保相同文本不同语音也能区分
-                hash_content = f"{text}_{voice}".encode('utf-8')
-                file_hash = hashlib.md5(hash_content).hexdigest()
-                output_file = os.path.join(self.cache_dir, f"{file_hash}.wav")
-            
-            # 检查是否存在缓存文件
-            if os.path.exists(output_file):
-                logger.info(f"使用缓存的语音文件: {output_file}")
-                return output_file
-                
-            # 运行异步函数生成语音
-            asyncio.run(self._generate_speech_async(text, output_file, voice))
-            logger.info(f"语音生成成功并缓存: {output_file}")
-            return output_file
-            
-        # 为兼容性添加generate_tts_sync方法
-        def generate_tts_sync(self, text, voice=None):
-            return self.generate_speech(text, voice=voice)
+from tts_manager import TTSManager
 
 # 禁用SSL证书验证
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -553,6 +502,7 @@ class SIPCall(pj.Call):
             last_transcription_time = time.time()
             min_chunk_size = 8000  # 至少4KB新数据才处理
             segment_count = 0
+            has_played_response = False
             
             # 等待录音文件创建
             while self.transcriber_active and not os.path.exists(self.recording_file):
@@ -604,19 +554,68 @@ class SIPCall(pj.Call):
                             # 使用Whisper进行转录
                             if self.whisper_model:
                                 try:
-                                    result = self.whisper_model.transcribe(
-                                        segment_file, 
-                                        language="zh",
-                                        task="transcribe",
-                                        verbose=False
-                                    )
+                                    # 添加超时机制
+                                    def transcribe_with_timeout():
+                                        return self.whisper_model.transcribe(
+                                            segment_file, 
+                                            language="zh",
+                                            task="transcribe",
+                                            verbose=False,
+                                            fp16=False  # 禁用FP16以避免CPU上的警告
+                                        )
+                                    
+                                    # 使用线程池执行转录，设置超时
+                                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                                        future = executor.submit(transcribe_with_timeout)
+                                        result = future.result(timeout=10)  # 10秒超时
+                                    
                                     text = result.get("text", "").strip()
                                     
                                     if text:
                                         logger.info(f"语音识别结果 (段{segment_count}): {text}")
-                                        # 这里可以添加进一步处理，如匹配回复规则等
+                                        
+                                        # 在第一次成功识别后播放响应语音
+                                        if not has_played_response and self.response_voice_file and os.path.exists(self.response_voice_file):
+                                            try:
+                                                logger.info(f"准备播放响应语音: {self.response_voice_file}")
+                                                
+                                                # 在主线程中执行PJSIP操作
+                                                def play_response():
+                                                    try:
+                                                        # 创建音频播放器
+                                                        player = pj.AudioMediaPlayer()
+                                                        player.createPlayer(self.response_voice_file)
+                                                        
+                                                        # 获取通话媒体
+                                                        audio_stream = self.getAudioMedia(-1)
+                                                        if audio_stream:
+                                                            # 开始传输音频
+                                                            player.startTransmit(audio_stream)
+                                                            logger.info("响应语音播放已开始")
+                                                            return True
+                                                        else:
+                                                            logger.error("无法获取音频媒体，无法播放响应语音")
+                                                            return False
+                                                    except Exception as e:
+                                                        logger.error(f"播放响应语音失败: {e}")
+                                                        import traceback
+                                                        logger.error(f"详细错误: {traceback.format_exc()}")
+                                                        return False
+                                                
+                                                # 使用线程池在主线程中执行播放
+                                                with concurrent.futures.ThreadPoolExecutor() as executor:
+                                                    future = executor.submit(play_response)
+                                                    if future.result(timeout=5):  # 5秒超时
+                                                        has_played_response = True
+                                                
+                                            except Exception as e:
+                                                logger.error(f"播放响应语音失败: {e}")
+                                                import traceback
+                                                logger.error(f"详细错误: {traceback.format_exc()}")
                                     else:
                                         logger.info(f"语音识别结果为空 (段{segment_count})")
+                                except concurrent.futures.TimeoutError:
+                                    logger.error(f"转录超时 (段{segment_count})")
                                 except Exception as whisper_err:
                                     logger.error(f"处理段{segment_count}时Whisper错误: {whisper_err}")
                                     import traceback
@@ -625,6 +624,12 @@ class SIPCall(pj.Call):
                             # 更新上次处理的位置和时间
                             last_size = current_size
                             last_transcription_time = time.time()
+                            
+                            # 清理临时文件
+                            try:
+                                os.remove(segment_file)
+                            except Exception as e:
+                                logger.warning(f"无法删除临时文件 {segment_file}: {e}")
                             
                         except Exception as e:
                             logger.error(f"处理音频段 {segment_count} 时出错: {e}")
@@ -636,6 +641,8 @@ class SIPCall(pj.Call):
                     
                 except Exception as e:
                     logger.error(f"实时转录循环出错: {e}")
+                    import traceback
+                    logger.error(f"详细错误: {traceback.format_exc()}")
                     time.sleep(1)
             
             logger.info("实时转录循环结束")

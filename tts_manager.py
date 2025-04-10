@@ -5,6 +5,9 @@ import edge_tts
 import subprocess
 import logging
 
+# 引入AudioUtils类
+from audio_utils import AudioUtils
+
 logger = logging.getLogger("tts")
 
 class TTSManager:
@@ -32,8 +35,11 @@ class TTSManager:
             await communicate.save(mp3_path)
             logger.info(f"TTS生成成功: {mp3_path}")
             
-            # 转换为WAV格式
-            self._convert_mp3_to_wav(mp3_path, wav_path)
+            # 转换为WAV格式 - 使用AudioUtils
+            converted_wav = AudioUtils.convert_mp3_to_wav(mp3_path, wav_path, 8000, 1)
+            if not converted_wav:
+                logger.error(f"无法转换TTS MP3文件为WAV格式")
+                return mp3_path
             
             return wav_path
         except Exception as e:
@@ -41,27 +47,6 @@ class TTSManager:
             import traceback
             logger.error(f"详细错误: {traceback.format_exc()}")
             return None
-            
-    def _convert_mp3_to_wav(self, mp3_file, wav_file):
-        """将MP3文件转换为PJSIP兼容的WAV格式"""
-        try:
-            # 使用ffmpeg转换
-            cmd = [
-                'ffmpeg', '-y', 
-                '-i', mp3_file, 
-                '-acodec', 'pcm_s16le', 
-                '-ar', '8000', 
-                '-ac', '1', 
-                wav_file
-            ]
-            
-            logger.info(f"转换MP3到WAV: {' '.join(cmd)}")
-            subprocess.run(cmd, check=True)
-            logger.info(f"MP3成功转换为WAV: {wav_file}")
-            
-        except Exception as e:
-            logger.error(f"MP3转换失败: {e}")
-            raise
     
     def generate_tts_sync(self, text, voice="zh-CN-XiaoxiaoNeural"):
         """同步版本的TTS生成函数"""

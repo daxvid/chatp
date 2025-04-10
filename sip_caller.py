@@ -37,6 +37,8 @@ try:
 except ImportError:
     pass
 
+# 引入AudioUtils类
+from audio_utils import AudioUtils
 # 引入TTSManager
 from tts_manager import TTSManager
 # 引入WhisperTranscriber
@@ -82,92 +84,34 @@ class SIPCall(pj.Call):
     def _load_voice_file(self):
         """加载语音文件"""
         try:
-            # 检查文件扩展名
-            if self.voice_file.lower().endswith('.mp3'):
-                logger.info(f"检测到MP3文件: {self.voice_file}")
-                # MP3文件需要转换为WAV格式
-                self._convert_mp3_to_wav()
-                # 转换后的文件路径
-                self.voice_file = self.voice_file.rsplit('.', 1)[0] + '.wav'
+            # 使用AudioUtils转换音频文件为SIP兼容格式
+            compatible_file = AudioUtils.convert_audio_to_sip_format(self.voice_file)
+            if not compatible_file:
+                logger.error(f"无法转换语音文件为SIP兼容格式: {self.voice_file}")
+                self.voice_data = None
+                return
                 
+            self.voice_file = compatible_file
+            
+            # 加载WAV文件数据
             with wave.open(self.voice_file, 'rb') as wf:
-                if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getframerate() != 8000:
-                    logger.warning("语音文件不是单声道、16位、8kHz采样率，尝试转换...")
-                    self._convert_to_compatible_wav()
                 self.voice_data = wf.readframes(wf.getnframes())
                 logger.info(f"语音文件加载成功: {self.voice_file}")
         except Exception as e:
             logger.error(f"加载语音文件失败: {e}")
             self.voice_data = None
             
-    def _convert_mp3_to_wav(self):
-        """将MP3文件转换为WAV格式"""
-        try:
-            import subprocess
-            output_wav = self.voice_file.rsplit('.', 1)[0] + '.wav'
-            
-            # 使用ffmpeg转换
-            cmd = [
-                'ffmpeg', '-y', 
-                '-i', self.voice_file, 
-                '-acodec', 'pcm_s16le', 
-                '-ar', '8000', 
-                '-ac', '1', 
-                output_wav
-            ]
-            
-            logger.info(f"转换MP3到WAV: {' '.join(cmd)}")
-            subprocess.run(cmd, check=True)
-            logger.info(f"MP3成功转换为WAV: {output_wav}")
-            
-        except Exception as e:
-            logger.error(f"MP3转换失败: {e}")
-            raise
-            
-    def _convert_to_compatible_wav(self):
-        """转换WAV文件为PJSIP兼容格式（单声道、16位、8kHz采样率）"""
-        try:
-            import subprocess
-            temp_file = self.voice_file + '.temp.wav'
-            
-            # 使用ffmpeg转换
-            cmd = [
-                'ffmpeg', '-y', 
-                '-i', self.voice_file, 
-                '-acodec', 'pcm_s16le', 
-                '-ar', '8000', 
-                '-ac', '1', 
-                temp_file
-            ]
-            
-            logger.info(f"转换WAV为兼容格式: {' '.join(cmd)}")
-            subprocess.run(cmd, check=True)
-            
-            # 替换原始文件
-            import os
-            os.rename(temp_file, self.voice_file)
-            logger.info(f"WAV文件已转换为兼容格式: {self.voice_file}")
-            
-        except Exception as e:
-            logger.error(f"WAV格式转换失败: {e}")
-            raise
-
     def _load_response_file(self):
         """加载响应语音文件"""
         try:
-            # 检查文件扩展名
-            if self.response_voice_file.lower().endswith('.mp3'):
-                logger.info(f"检测到MP3响应文件: {self.response_voice_file}")
-                # MP3文件需要转换为WAV格式
-                self._convert_mp3_to_wav(self.response_voice_file)
-                # 转换后的文件路径
-                self.response_voice_file = self.response_voice_file.rsplit('.', 1)[0] + '.wav'
+            # 使用AudioUtils转换音频文件为SIP兼容格式
+            compatible_file = AudioUtils.convert_audio_to_sip_format(self.response_voice_file)
+            if not compatible_file:
+                logger.error(f"无法转换响应语音文件为SIP兼容格式: {self.response_voice_file}")
+                return
                 
-            with wave.open(self.response_voice_file, 'rb') as wf:
-                if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getframerate() != 8000:
-                    logger.warning("响应语音文件不是单声道、16位、8kHz采样率，尝试转换...")
-                    self._convert_to_compatible_wav(self.response_voice_file)
-                logger.info(f"响应语音文件加载成功: {self.response_voice_file}")
+            self.response_voice_file = compatible_file
+            logger.info(f"响应语音文件加载成功: {self.response_voice_file}")
         except Exception as e:
             logger.error(f"加载响应语音文件失败: {e}")
 

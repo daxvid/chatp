@@ -15,6 +15,7 @@ from tts_manager import TTSManager
 from whisper_manager import WhisperManager
 from sip_caller import SIPCaller
 from call_manager import CallManager
+from whisper_transcriber import WhisperTranscriber
 
 # 禁用全局SSL证书验证
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -295,6 +296,21 @@ def test_call(sip_caller):
     if sip_caller.current_call:
         sip_caller.hangup()
     time.sleep(2)  # 在进行下一步前等待
+
+
+def init_whisper_model():
+    """初始化Whisper语音识别模型"""
+    try:
+        logger.info("正在加载Whisper模型(small)...")
+        import whisper
+        model = whisper.load_model("small")
+        logger.info("Whisper模型加载成功")
+        return model
+    except Exception as e:
+        logger.error(f"加载Whisper模型失败: {e}")
+        import traceback
+        logger.error(f"详细错误: {traceback.format_exc()}")
+        return None
 
 
 if __name__ == "__main__":

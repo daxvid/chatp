@@ -53,7 +53,6 @@ sip:
   bind_port: 5060                # 本地绑定端口
   tts_text: "您好，这是一个自动语音通知..." # 要播放的文本
   tts_voice: "zh-CN-XiaoxiaoNeural" # 语音合成声音
-  voice_file: "message.wav"      # 预设语音文件(可选)
 
 call:
   list_file: "tel.txt"           # 电话号码列表
@@ -72,7 +71,14 @@ whisper:
 
 2. 运行程序：
 ```bash
+# 基本运行方式
 python main.py
+
+# 指定语音文件方式
+python main.py --voice-file path/to/your/voice.wav
+
+# 指定响应语音文件方式
+python main.py --response-file path/to/response.wav
 ```
 
 3. 查看结果：

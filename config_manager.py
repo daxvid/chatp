@@ -33,8 +33,16 @@ class ConfigManager:
         }
         
     def get_voice_file(self):
-        """获取语音文件路径"""
-        return self.config.get('sip', {}).get('voice_file', '')
+        """获取语音文件路径（已弃用）
+        
+        Note:
+            此方法已弃用，请通过命令行参数直接指定语音文件
+        
+        Returns:
+            str: 空字符串
+        """
+        # 不再从配置文件获取默认语音文件
+        return ''
         
     def get_target_number(self):
         """获取目标号码"""

@@ -7,6 +7,7 @@ import edge_tts
 import traceback
 import signal
 import sys
+import argparse  # 添加参数解析模块
 import pjsua2 as pj  # 确保正确导入
 from threading import Event
 
@@ -53,16 +54,36 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
+def parse_arguments():
+    """解析命令行参数"""
+    parser = argparse.ArgumentParser(description='自动电话系统')
+    parser.add_argument('--voice-file', '-v', type=str, help='要播放的语音文件路径')
+    parser.add_argument('--response-file', '-r', type=str, help='响应语音文件路径')
+    parser.add_argument('--debug', '-d', action='store_true', help='启用调试模式')
+    return parser.parse_args()
+
 def main():
     """主程序入口"""
     global sip_caller
     try:
-        # 设置最详细的日志级别
-        logging.getLogger().setLevel(logging.DEBUG)
+        # 解析命令行参数
+        args = parse_arguments()
+        
+        # 设置日志级别
+        if args.debug:
+            logging.getLogger().setLevel(logging.DEBUG)
+        else:
+            logging.getLogger().setLevel(logging.INFO)
         
         logger.info("===== 自动电话呼叫系统启动 =====")
         logger.info(f"Python版本: {sys.version}")
         logger.info(f"操作系统: {os.name}, {sys.platform}")
+        
+        # 记录命令行参数
+        if args.voice_file:
+            logger.info(f"指定语音文件: {args.voice_file}")
+        if args.response_file:
+            logger.info(f"指定响应语音文件: {args.response_file}")
         
         # 加载配置
         config_manager = ConfigManager('config.yaml')
@@ -146,11 +167,13 @@ def main():
                 
             logger.info(f"正在处理第 {i+1}/{len(call_list)} 个号码: {phone_number}")
             
-            # 拨打电话
+            # 拨打电话，使用命令行指定的语音文件
             result = call_manager.make_call_with_tts(
                 phone_number, 
                 tts_config['text'], 
-                tts_config['voice']
+                tts_config['voice'],
+                voice_file=args.voice_file,
+                response_voice_file=args.response_file
             )
             
             # 等待通话完成

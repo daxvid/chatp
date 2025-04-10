@@ -64,21 +64,31 @@ class CallManager:
             logger.error(f"保存呼叫结果失败: {e}")
             return False
             
-    def make_call_with_tts(self, phone_number, text, voice="zh-CN-XiaoxiaoNeural"):
+    def make_call_with_tts(self, phone_number, text, voice="zh-CN-XiaoxiaoNeural", voice_file=None, response_voice_file=None):
         """使用TTS拨打电话"""
         try:
             logger.info(f"准备拨打电话 {phone_number}...")
             
-            # 生成语音文件
-            logger.info(f"生成语音: '{text[:30]}...'")
-            wav_file = self.tts_manager.generate_tts_sync(text, voice)
-            if not wav_file:
-                logger.error("TTS生成失败，无法拨打电话")
-                return None
-            logger.info(f"语音文件生成成功: {wav_file}")
+            # 使用指定的语音文件或生成新的语音文件
+            if voice_file and os.path.exists(voice_file):
+                logger.info(f"使用指定的语音文件: {voice_file}")
+                wav_file = voice_file
+            else:
+                # 生成语音文件
+                logger.info(f"生成语音: '{text[:30]}...'")
+                wav_file = self.tts_manager.generate_tts_sync(text, voice)
+                if not wav_file:
+                    logger.error("TTS生成失败，无法拨打电话")
+                    return None
+                logger.info(f"语音文件生成成功: {wav_file}")
                 
             # 设置Whisper模型
             self.sip_caller.set_whisper_model(self.whisper_manager.model)
+            
+            # 如果指定了响应语音文件，设置到SIP呼叫中
+            if response_voice_file and os.path.exists(response_voice_file):
+                logger.info(f"设置响应语音文件: {response_voice_file}")
+                self.sip_caller.set_response_voice_file(response_voice_file)
                 
             # 记录开始时间
             start_time = datetime.now()

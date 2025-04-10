@@ -10,7 +10,7 @@ sip:
   target_number: "13001413111"
   #bind_ip: "0.0.0.0"  # 可选
   #bind_port: 5060
-  voice_file: "initial_message.wav"       # 语音文件路径
+  #voice_file: "initial_message.wav"       # 语音文件路径已移除，通过命令行参数指定
   tts_text: "您好, 我是九一的客服小微,您已获取得系统返还的100元的奖金,请您登录九一软件领取,有效时间30天"
   tts_voice: "zh-CN-XiaoxiaoNeural"
 

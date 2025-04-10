@@ -21,7 +21,7 @@ class TTSManager:
         try:
             # 创建文件名（使用文本的哈希值）
             text_hash = hashlib.md5(text.encode()).hexdigest()
-            mp3_path = os.path.join(self.cache_dir, f"{text_hash}_{voice}.mp3")
+            temp_file = os.path.join(self.cache_dir, f"{text_hash}_{voice}.temp")
             wav_path = os.path.join(self.cache_dir, f"{text_hash}_{voice}.wav")
             
             # 如果已经生成过，直接返回
@@ -32,14 +32,29 @@ class TTSManager:
             # 生成语音
             logger.info(f"正在使用edge-tts生成语音: '{text}'")
             communicate = edge_tts.Communicate(text, voice)
-            await communicate.save(mp3_path)
-            logger.info(f"TTS生成成功: {mp3_path}")
             
-            # 转换为WAV格式 - 使用AudioUtils
-            converted_wav = AudioUtils.convert_mp3_to_wav(mp3_path, wav_path, 8000, 1)
+            # 直接生成WAV文件
+            await communicate.save(temp_file)
+            logger.info(f"TTS生成成功: {temp_file}")
+            
+            # 转换为SIP兼容格式
+            converted_wav = AudioUtils.ensure_sip_compatible_format(
+                temp_file, 
+                wav_path, 
+                sample_rate=8000, 
+                channels=1
+            )
+            
+            # 清理临时文件
+            try:
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+            except Exception as e:
+                logger.warning(f"无法删除临时文件: {e}")
+                
             if not converted_wav:
-                logger.error(f"无法转换TTS MP3文件为WAV格式")
-                return mp3_path
+                logger.error(f"无法将TTS文件转换为SIP兼容格式")
+                return None
             
             return wav_path
         except Exception as e:

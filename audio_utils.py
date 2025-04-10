@@ -8,46 +8,6 @@ class AudioUtils:
     """音频文件处理工具类"""
     
     @staticmethod
-    def convert_mp3_to_wav(mp3_file, output_wav=None, sample_rate=8000, channels=1):
-        """将MP3文件转换为WAV格式
-        
-        Args:
-            mp3_file: MP3文件路径
-            output_wav: 输出WAV文件路径，如果为None则使用同名WAV
-            sample_rate: 采样率，默认8000Hz (适合SIP)
-            channels: 声道数，默认1 (单声道)
-            
-        Returns:
-            转换后的WAV文件路径
-        """
-        try:
-            # 如果未指定输出文件名，使用相同路径但扩展名为wav
-            if not output_wav:
-                output_wav = mp3_file.rsplit('.', 1)[0] + '.wav'
-            
-            # 使用ffmpeg转换
-            cmd = [
-                'ffmpeg', '-y', 
-                '-i', mp3_file, 
-                '-acodec', 'pcm_s16le', 
-                '-ar', str(sample_rate), 
-                '-ac', str(channels), 
-                output_wav
-            ]
-            
-            logger.info(f"转换MP3到WAV: {' '.join(cmd)}")
-            subprocess.run(cmd, check=True)
-            logger.info(f"MP3成功转换为WAV: {output_wav}")
-            
-            return output_wav
-            
-        except Exception as e:
-            logger.error(f"MP3转换失败: {e}")
-            import traceback
-            logger.error(f"详细错误: {traceback.format_exc()}")
-            return None
-    
-    @staticmethod
     def convert_to_sip_compatible_wav(wav_file, temp_file=None, sample_rate=8000, channels=1):
         """转换WAV文件为PJSIP兼容格式（单声道、16位、指定采样率）
         
@@ -91,14 +51,17 @@ class AudioUtils:
             return False
     
     @staticmethod
-    def convert_audio_to_sip_format(audio_file):
-        """将任意音频文件转换为SIP兼容格式
+    def ensure_sip_compatible_format(audio_file, output_file=None, sample_rate=8000, channels=1):
+        """确保音频文件为SIP兼容格式
         
-        检查音频文件格式并进行必要转换，确保其为SIP兼容的WAV格式
+        检查WAV文件格式并进行必要转换，确保其为SIP兼容格式
         (单声道、16位、8kHz采样率)
         
         Args:
             audio_file: 输入音频文件路径
+            output_file: 输出文件路径，如果为None则覆盖原文件
+            sample_rate: 采样率，默认8000Hz
+            channels: 声道数，默认1 (单声道)
             
         Returns:
             转换后的文件路径（成功）或None（失败）
@@ -107,35 +70,46 @@ class AudioUtils:
             if not os.path.exists(audio_file):
                 logger.error(f"音频文件不存在: {audio_file}")
                 return None
-                
-            # 检查扩展名
-            file_name, ext = os.path.splitext(audio_file)
-            ext = ext.lower()
             
-            output_file = audio_file
+            # 检查文件是否为WAV格式
+            _, ext = os.path.splitext(audio_file)
+            if ext.lower() != '.wav':
+                logger.error(f"不支持的音频格式: {ext}，仅支持WAV格式")
+                return None
             
-            # 如果是MP3，先转WAV
-            if ext == '.mp3':
-                logger.info(f"检测到MP3文件: {audio_file}")
-                output_file = AudioUtils.convert_mp3_to_wav(audio_file)
-                if not output_file:
-                    return None
-            # 如果不是WAV也不是MP3，尝试用ffmpeg转换
-            elif ext != '.wav':
-                logger.info(f"检测到非WAV/MP3文件: {audio_file}，尝试转换")
-                output_file = file_name + '.wav'
-                if not AudioUtils.convert_mp3_to_wav(audio_file, output_file):
-                    return None
+            # 如果未指定输出文件，使用原文件
+            if not output_file:
+                output_file = audio_file
             
             # 检查WAV格式是否符合SIP要求
             try:
                 import wave
-                with wave.open(output_file, 'rb') as wf:
-                    if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getframerate() != 8000:
-                        logger.warning(f"音频文件不是单声道、16位、8kHz采样率: {output_file}")
-                        # 转换为SIP兼容格式
-                        if not AudioUtils.convert_to_sip_compatible_wav(output_file):
-                            return None
+                with wave.open(audio_file, 'rb') as wf:
+                    if wf.getnchannels() != channels or wf.getsampwidth() != 2 or wf.getframerate() != sample_rate:
+                        logger.warning(f"音频文件不是指定格式(单声道、16位、{sample_rate}Hz采样率): {audio_file}")
+                        
+                        # 需要转换格式
+                        temp_file = output_file + '.temp.wav'
+                        cmd = [
+                            'ffmpeg', '-y', 
+                            '-i', audio_file, 
+                            '-acodec', 'pcm_s16le', 
+                            '-ar', str(sample_rate), 
+                            '-ac', str(channels), 
+                            temp_file
+                        ]
+                        
+                        logger.info(f"转换WAV为兼容格式: {' '.join(cmd)}")
+                        subprocess.run(cmd, check=True)
+                        
+                        # 如果输出文件不是原文件，直接重命名；否则使用替换
+                        if output_file != audio_file:
+                            os.rename(temp_file, output_file)
+                        else:
+                            os.remove(audio_file)
+                            os.rename(temp_file, output_file)
+                        
+                        logger.info(f"WAV文件已转换为兼容格式: {output_file}")
             except Exception as e:
                 logger.error(f"检查WAV格式时出错: {e}")
                 return None
@@ -143,7 +117,7 @@ class AudioUtils:
             return output_file
             
         except Exception as e:
-            logger.error(f"转换音频到SIP格式失败: {e}")
+            logger.error(f"处理音频文件失败: {e}")
             import traceback
             logger.error(f"详细错误: {traceback.format_exc()}")
             return None

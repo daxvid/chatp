@@ -243,5 +243,20 @@ def main():
             logger.info("SIP服务已停止")
 
 
+def init_whisper_model():
+    """初始化Whisper语音识别模型"""
+    try:
+        logger.info("正在加载Whisper模型(small)...")
+        import whisper
+        model = whisper.load_model("small")
+        logger.info("Whisper模型加载成功")
+        return model
+    except Exception as e:
+        logger.error(f"加载Whisper模型失败: {e}")
+        import traceback
+        logger.error(f"详细错误: {traceback.format_exc()}")
+        return None
+
+
 if __name__ == "__main__":
     main() 

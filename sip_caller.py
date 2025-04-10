@@ -37,8 +37,6 @@ try:
 except ImportError:
     pass
 
-# 引入AudioUtils类
-from audio_utils import AudioUtils
 # 引入TTSManager
 from tts_manager import TTSManager
 # 引入WhisperTranscriber
@@ -84,34 +82,92 @@ class SIPCall(pj.Call):
     def _load_voice_file(self):
         """加载语音文件"""
         try:
-            # 使用AudioUtils确保音频文件为SIP兼容格式
-            compatible_file = AudioUtils.ensure_sip_compatible_format(self.voice_file)
-            if not compatible_file:
-                logger.error(f"无法将语音文件转换为SIP兼容格式: {self.voice_file}")
-                self.voice_data = None
-                return
+            # 检查文件扩展名
+            if self.voice_file.lower().endswith('.mp3'):
+                logger.info(f"检测到MP3文件: {self.voice_file}")
+                # MP3文件需要转换为WAV格式
+                self._convert_mp3_to_wav()
+                # 转换后的文件路径
+                self.voice_file = self.voice_file.rsplit('.', 1)[0] + '.wav'
                 
-            self.voice_file = compatible_file
-            
-            # 加载WAV文件数据
             with wave.open(self.voice_file, 'rb') as wf:
+                if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getframerate() != 8000:
+                    logger.warning("语音文件不是单声道、16位、8kHz采样率，尝试转换...")
+                    self._convert_to_compatible_wav()
                 self.voice_data = wf.readframes(wf.getnframes())
                 logger.info(f"语音文件加载成功: {self.voice_file}")
         except Exception as e:
             logger.error(f"加载语音文件失败: {e}")
             self.voice_data = None
             
+    def _convert_mp3_to_wav(self):
+        """将MP3文件转换为WAV格式"""
+        try:
+            import subprocess
+            output_wav = self.voice_file.rsplit('.', 1)[0] + '.wav'
+            
+            # 使用ffmpeg转换
+            cmd = [
+                'ffmpeg', '-y', 
+                '-i', self.voice_file, 
+                '-acodec', 'pcm_s16le', 
+                '-ar', '8000', 
+                '-ac', '1', 
+                output_wav
+            ]
+            
+            logger.info(f"转换MP3到WAV: {' '.join(cmd)}")
+            subprocess.run(cmd, check=True)
+            logger.info(f"MP3成功转换为WAV: {output_wav}")
+            
+        except Exception as e:
+            logger.error(f"MP3转换失败: {e}")
+            raise
+            
+    def _convert_to_compatible_wav(self):
+        """转换WAV文件为PJSIP兼容格式（单声道、16位、8kHz采样率）"""
+        try:
+            import subprocess
+            temp_file = self.voice_file + '.temp.wav'
+            
+            # 使用ffmpeg转换
+            cmd = [
+                'ffmpeg', '-y', 
+                '-i', self.voice_file, 
+                '-acodec', 'pcm_s16le', 
+                '-ar', '8000', 
+                '-ac', '1', 
+                temp_file
+            ]
+            
+            logger.info(f"转换WAV为兼容格式: {' '.join(cmd)}")
+            subprocess.run(cmd, check=True)
+            
+            # 替换原始文件
+            import os
+            os.rename(temp_file, self.voice_file)
+            logger.info(f"WAV文件已转换为兼容格式: {self.voice_file}")
+            
+        except Exception as e:
+            logger.error(f"WAV格式转换失败: {e}")
+            raise
+
     def _load_response_file(self):
         """加载响应语音文件"""
         try:
-            # 使用AudioUtils确保音频文件为SIP兼容格式
-            compatible_file = AudioUtils.ensure_sip_compatible_format(self.response_voice_file)
-            if not compatible_file:
-                logger.error(f"无法将响应语音文件转换为SIP兼容格式: {self.response_voice_file}")
-                return
+            # 检查文件扩展名
+            if self.response_voice_file.lower().endswith('.mp3'):
+                logger.info(f"检测到MP3响应文件: {self.response_voice_file}")
+                # MP3文件需要转换为WAV格式
+                self._convert_mp3_to_wav(self.response_voice_file)
+                # 转换后的文件路径
+                self.response_voice_file = self.response_voice_file.rsplit('.', 1)[0] + '.wav'
                 
-            self.response_voice_file = compatible_file
-            logger.info(f"响应语音文件加载成功: {self.response_voice_file}")
+            with wave.open(self.response_voice_file, 'rb') as wf:
+                if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getframerate() != 8000:
+                    logger.warning("响应语音文件不是单声道、16位、8kHz采样率，尝试转换...")
+                    self._convert_to_compatible_wav(self.response_voice_file)
+                logger.info(f"响应语音文件加载成功: {self.response_voice_file}")
         except Exception as e:
             logger.error(f"加载响应语音文件失败: {e}")
 
@@ -322,6 +378,52 @@ class SIPCall(pj.Call):
             logger.error(f"详细错误: {traceback.format_exc()}")
             return None
             
+    def play_response_after_speech(self):
+        """在对方说完话后播放响应语音"""
+        if self.has_played_response:
+            logger.info("已经播放过响应，不再重复播放")
+            return
+            
+        try:
+            logger.info("准备播放响应语音")
+            # 等待一小段时间，确保对方说完
+            time.sleep(0.5)
+            
+            if not self.response_voice_file or not os.path.exists(self.response_voice_file):
+                logger.warning(f"响应语音文件不存在或未指定: {self.response_voice_file}")
+                return
+                
+            # 创建音频播放器
+            player = pj.AudioMediaPlayer()
+            logger.info(f"尝试播放响应语音文件: {self.response_voice_file}")
+            
+            # 加载并检查语音文件
+            try:
+                player.createPlayer(self.response_voice_file)
+                logger.info("响应语音播放器已创建")
+            except Exception as e:
+                logger.error(f"创建响应播放器失败: {e}")
+                return
+                
+            # 获取通话媒体
+            try:
+                audio_stream = self.getAudioMedia(-1)
+                logger.info("成功获取音频媒体")
+            except Exception as e:
+                logger.error(f"获取音频媒体失败: {e}")
+                logger.error("响应语音播放功能不可用")
+                return
+            
+            # 开始传输音频
+            player.startTransmit(audio_stream)
+            logger.info("开始播放响应语音，音频传输已启动")
+            self.has_played_response = True
+            
+        except Exception as e:
+            logger.error(f"播放响应语音过程中出错: {e}")
+            import traceback
+            logger.error(f"详细错误: {traceback.format_exc()}")
+    
     def onCallState(self, prm):
         """呼叫状态改变时的回调函数"""
         try:
@@ -496,12 +598,6 @@ class SIPCall(pj.Call):
             logger.error(f"详细错误: {traceback.format_exc()}")
             return False
 
-    def get_transcription_results(self):
-        """获取所有转录结果"""
-        if hasattr(self, 'transcriber') and self.transcriber:
-            return self.transcriber.get_transcription_results()
-        return []
-
 class SIPCaller:
     """SIP呼叫管理类"""
     def __init__(self, sip_config):
@@ -590,6 +686,11 @@ class SIPCaller:
             logger.info(f"SIP URI: {sip_uri}")
             logger.info(f"SIP账户: {self.config.get('username', '')}@{self.config.get('server', '')}:{self.config.get('port', '')}")
             
+            # 如果未指定语音文件，但config中提供了语音文件路径，则使用它
+            if not voice_file and 'voice_file' in self.config:
+                voice_file = self.config['voice_file']
+                logger.info(f"使用配置中的语音文件: {voice_file}")
+                
             # 如果未指定响应语音文件，且config中有tts_text，则生成语音文件
             if not response_voice_file and 'tts_text' in self.config:                
                 try:
@@ -683,21 +784,6 @@ class SIPCaller:
     def set_whisper_model(self, model):
         """设置Whisper模型"""
         self.whisper_model = model
-        
-    def set_response_voice_file(self, file_path):
-        """设置响应语音文件，用于外部设置"""
-        if file_path and os.path.exists(file_path):
-            logger.info(f"设置响应语音文件: {file_path}")
-            
-            # 递到当前通话中
-            if self.current_call:
-                self.current_call.response_voice_file = file_path
-                # 加载语音文件
-                self.current_call._load_response_file()
-            return True
-        else:
-            logger.error(f"设置响应语音文件失败，文件不存在: {file_path}")
-            return False
         
     def _load_response_configs(self):
         """加载回复配置"""

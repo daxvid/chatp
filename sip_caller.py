@@ -149,6 +149,11 @@ class SIPCall(pj.Call):
     def start_recording(self, phone_number):
         """开始录音"""
         try:
+            # 如果已经有录音器和录音文件，则不再创建
+            if self.recorder or self.audio_recorder:
+                logger.info(f"录音器已存在，不再创建")
+                return True
+                
             # 创建recordings目录
             recordings_dir = "recordings"
             os.makedirs(recordings_dir, exist_ok=True)
@@ -161,38 +166,126 @@ class SIPCall(pj.Call):
             filename = f"{clean_number}_{timestamp}.wav"
             self.recording_file = os.path.join(recordings_dir, filename)
             
-            # 创建录音器
-            self.recorder = pj.AudioMediaRecorder()
-            self.recorder.createRecorder(self.recording_file)
+            logger.info(f"创建录音文件: {self.recording_file}")
             
-            # 连接到通话 - 恢复到之前的录音方式
+            # 直接创建录音器，但尝试获取媒体录音需要放在onCallMediaState
             try:
-                # 首先尝试使用getAudioMedia方法
-                call_media = self.getAudioMedia(-1)  # -1表示第一个可用的音频媒体
-                logger.info(f"成功获取音频媒体")
+                # 创建录音器实例
+                self.recorder = pj.AudioMediaRecorder()
+                self.recorder.createRecorder(self.recording_file)
+                logger.info(f"录音设备创建成功: {self.recording_file}")
+                
+                # 获取当前音频媒体 - 尝试在这里就连接，如果成功最好
+                try:
+                    audio_media = self.getAudioMedia(-1)
+                    if audio_media:
+                        audio_media.startTransmit(self.recorder)
+                        logger.info(f"已立即开始录音: {self.recording_file}")
+                    else:
+                        logger.info(f"无法获取音频媒体，将在媒体状态变化时开始录音")
+                except Exception as e:
+                    logger.info(f"无法立即连接音频媒体，将在媒体状态变化时开始录音: {e}")
             except Exception as e:
-                logger.error(f"无法获取音频媒体: {e}")
-                logger.error("录音功能不可用")
+                logger.error(f"创建录音设备失败: {e}")
+                self.recording_file = None
+                self.recorder = None
                 return False
                 
-            # 开始录音
-            call_media.startTransmit(self.recorder)
-            
-            logger.info(f"开始录音: {self.recording_file}")
             return True
             
         except Exception as e:
-            logger.error(f"录音启动失败: {e}")
+            logger.error(f"录音准备失败: {e}")
             self.recording_file = None
+            self.recorder = None
             return False
     
+    def onCallMediaState(self, prm):
+        """处理呼叫媒体状态改变事件"""
+        try:
+            ci = self.getInfo()
+            logger.info(f"呼叫媒体状态改变，当前呼叫状态: {ci.stateText}")
+            
+            # 尝试获取音频媒体
+            try:
+                self.audio_media = self.getAudioMedia(-1)
+                
+                if not self.audio_media:
+                    logger.error("无法获取音频媒体")
+                    return
+                    
+                logger.info("成功获取音频媒体")
+                
+                # 检查是否需要播放响应语音
+                if hasattr(self, 'should_play_response') and self.should_play_response:
+                    self.should_play_response = False  # 重置标志
+                    
+                    # 如果有响应语音文件，播放它
+                    if self.response_voice_file and os.path.exists(self.response_voice_file):
+                        try:
+                            logger.info(f"播放响应语音: {self.response_voice_file}")
+                            
+                            # 创建音频播放器
+                            player = pj.AudioMediaPlayer()
+                            player.createPlayer(self.response_voice_file)
+                            
+                            # 播放到音频媒体
+                            player.startTransmit(self.audio_media)
+                            logger.info("响应语音播放已开始")
+                        except Exception as e:
+                            logger.error(f"播放响应语音失败: {e}")
+                            import traceback
+                            logger.error(f"详细错误: {traceback.format_exc()}")
+                
+                # 处理录音 - 检查是否已经有录音器但尚未连接到音频媒体
+                if self.recorder and not self.audio_recorder:
+                    try:
+                        # 连接现有录音器到音频媒体
+                        logger.info(f"连接音频媒体到已有录音设备: {self.recording_file}")
+                        self.audio_media.startTransmit(self.recorder)
+                        # 记录录音器以便后续使用
+                        self.audio_recorder = self.recorder
+                        logger.info(f"开始录音: {self.recording_file}")
+                    except Exception as e:
+                        logger.error(f"连接录音设备失败: {e}")
+                        import traceback
+                        logger.error(f"详细错误: {traceback.format_exc()}")
+                
+                # 如果有语音文件需要播放
+                if self.voice_file and os.path.exists(self.voice_file):
+                    try:
+                        # 创建播放器
+                        player = pj.AudioMediaPlayer()
+                        player.createPlayer(self.voice_file)
+                        
+                        # 开始传输到呼叫的音频媒体
+                        player.startTransmit(self.audio_media)
+                        logger.info(f"开始播放语音文件: {self.voice_file}")
+                    except Exception as e:
+                        logger.error(f"播放语音文件失败: {e}")
+                        import traceback
+                        logger.error(f"详细错误: {traceback.format_exc()}")
+            except Exception as e:
+                logger.error(f"处理音频媒体时出错: {e}")
+                import traceback
+                logger.error(f"详细错误: {traceback.format_exc()}")
+                
+        except Exception as e:
+            logger.error(f"处理呼叫媒体状态改变时出错: {e}")
+            import traceback
+            logger.error(f"详细错误: {traceback.format_exc()}")
+            
     def stop_recording(self):
         """停止录音"""
         try:
-            if self.recorder:
+            if self.audio_recorder:
                 # 停止录音
-                self.recorder = None
+                self.audio_recorder = None
                 logger.info(f"录音已停止: {self.recording_file}")
+                return True
+            elif self.recorder:
+                # 可能是创建了录音器但尚未连接到音频媒体
+                self.recorder = None
+                logger.info(f"录音已停止 (录音器未连接): {self.recording_file}")
                 return True
             return False
         except Exception as e:
@@ -349,90 +442,6 @@ class SIPCall(pj.Call):
             import traceback
             logger.error(f"详细错误: {traceback.format_exc()}")
     
-    def onCallMediaState(self, prm):
-        """处理呼叫媒体状态改变事件"""
-        try:
-            ci = self.getInfo()
-            logger.info(f"呼叫媒体状态改变，当前呼叫状态: {ci.stateText}")
-            
-            # 尝试获取音频媒体
-            try:
-                self.audio_media = self.getAudioMedia(-1)
-                
-                if not self.audio_media:
-                    logger.error("无法获取音频媒体")
-                    return
-                    
-                logger.info("成功获取音频媒体")
-                
-                # 检查是否需要播放响应语音
-                if hasattr(self, 'should_play_response') and self.should_play_response:
-                    self.should_play_response = False  # 重置标志
-                    
-                    # 如果有响应语音文件，播放它
-                    if self.response_voice_file and os.path.exists(self.response_voice_file):
-                        try:
-                            logger.info(f"播放响应语音: {self.response_voice_file}")
-                            
-                            # 创建音频播放器
-                            player = pj.AudioMediaPlayer()
-                            player.createPlayer(self.response_voice_file)
-                            
-                            # 播放到音频媒体
-                            player.startTransmit(self.audio_media)
-                            logger.info("响应语音播放已开始")
-                        except Exception as e:
-                            logger.error(f"播放响应语音失败: {e}")
-                            import traceback
-                            logger.error(f"详细错误: {traceback.format_exc()}")
-                
-                # 创建录音设备
-                if not self.audio_recorder and self.phone_number:
-                    try:
-                        self.audio_recorder = pj.AudioMediaRecorder()
-                        
-                        # 创建录音文件
-                        os.makedirs("recordings", exist_ok=True)
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        self.recording_file = f"recordings/{self.phone_number}_{timestamp}.wav"
-                        
-                        logger.info(f"创建录音文件: {self.recording_file}")
-                        self.audio_recorder.createRecorder(self.recording_file)
-                        logger.info("录音设备创建成功")
-                        
-                        # 连接音频媒体到录音设备
-                        logger.info("连接音频媒体到录音设备")
-                        self.audio_media.startTransmit(self.audio_recorder)
-                        logger.info(f"开始录音: {self.recording_file}")
-                    except Exception as e:
-                        logger.error(f"创建录音设备失败: {e}")
-                        import traceback
-                        logger.error(f"详细错误: {traceback.format_exc()}")
-                
-                # 如果有语音文件需要播放
-                if self.voice_file and os.path.exists(self.voice_file):
-                    try:
-                        # 创建播放器
-                        player = pj.AudioMediaPlayer()
-                        player.createPlayer(self.voice_file)
-                        
-                        # 开始传输到呼叫的音频媒体
-                        player.startTransmit(self.audio_media)
-                        logger.info(f"开始播放语音文件: {self.voice_file}")
-                    except Exception as e:
-                        logger.error(f"播放语音文件失败: {e}")
-                        import traceback
-                        logger.error(f"详细错误: {traceback.format_exc()}")
-            except Exception as e:
-                logger.error(f"处理音频媒体时出错: {e}")
-                import traceback
-                logger.error(f"详细错误: {traceback.format_exc()}")
-                
-        except Exception as e:
-            logger.error(f"处理呼叫媒体状态改变时出错: {e}")
-            import traceback
-            logger.error(f"详细错误: {traceback.format_exc()}")
-            
     def onCallState(self, prm):
         """呼叫状态改变时的回调函数"""
         try:

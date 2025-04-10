@@ -37,8 +37,6 @@ try:
 except ImportError:
     pass
 
-# 引入AudioUtils类
-from audio_utils import AudioUtils
 # 引入TTSManager
 from tts_manager import TTSManager
 # 引入WhisperTranscriber
@@ -84,34 +82,92 @@ class SIPCall(pj.Call):
     def _load_voice_file(self):
         """加载语音文件"""
         try:
-            # 使用AudioUtils确保音频文件为SIP兼容格式
-            compatible_file = AudioUtils.ensure_sip_compatible_format(self.voice_file)
-            if not compatible_file:
-                logger.error(f"无法将语音文件转换为SIP兼容格式: {self.voice_file}")
-                self.voice_data = None
-                return
+            # 检查文件扩展名
+            if self.voice_file.lower().endswith('.mp3'):
+                logger.info(f"检测到MP3文件: {self.voice_file}")
+                # MP3文件需要转换为WAV格式
+                self._convert_mp3_to_wav()
+                # 转换后的文件路径
+                self.voice_file = self.voice_file.rsplit('.', 1)[0] + '.wav'
                 
-            self.voice_file = compatible_file
-            
-            # 加载WAV文件数据
             with wave.open(self.voice_file, 'rb') as wf:
+                if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getframerate() != 8000:
+                    logger.warning("语音文件不是单声道、16位、8kHz采样率，尝试转换...")
+                    self._convert_to_compatible_wav()
                 self.voice_data = wf.readframes(wf.getnframes())
                 logger.info(f"语音文件加载成功: {self.voice_file}")
         except Exception as e:
             logger.error(f"加载语音文件失败: {e}")
             self.voice_data = None
             
+    def _convert_mp3_to_wav(self):
+        """将MP3文件转换为WAV格式"""
+        try:
+            import subprocess
+            output_wav = self.voice_file.rsplit('.', 1)[0] + '.wav'
+            
+            # 使用ffmpeg转换
+            cmd = [
+                'ffmpeg', '-y', 
+                '-i', self.voice_file, 
+                '-acodec', 'pcm_s16le', 
+                '-ar', '8000', 
+                '-ac', '1', 
+                output_wav
+            ]
+            
+            logger.info(f"转换MP3到WAV: {' '.join(cmd)}")
+            subprocess.run(cmd, check=True)
+            logger.info(f"MP3成功转换为WAV: {output_wav}")
+            
+        except Exception as e:
+            logger.error(f"MP3转换失败: {e}")
+            raise
+            
+    def _convert_to_compatible_wav(self):
+        """转换WAV文件为PJSIP兼容格式（单声道、16位、8kHz采样率）"""
+        try:
+            import subprocess
+            temp_file = self.voice_file + '.temp.wav'
+            
+            # 使用ffmpeg转换
+            cmd = [
+                'ffmpeg', '-y', 
+                '-i', self.voice_file, 
+                '-acodec', 'pcm_s16le', 
+                '-ar', '8000', 
+                '-ac', '1', 
+                temp_file
+            ]
+            
+            logger.info(f"转换WAV为兼容格式: {' '.join(cmd)}")
+            subprocess.run(cmd, check=True)
+            
+            # 替换原始文件
+            import os
+            os.rename(temp_file, self.voice_file)
+            logger.info(f"WAV文件已转换为兼容格式: {self.voice_file}")
+            
+        except Exception as e:
+            logger.error(f"WAV格式转换失败: {e}")
+            raise
+
     def _load_response_file(self):
         """加载响应语音文件"""
         try:
-            # 使用AudioUtils确保音频文件为SIP兼容格式
-            compatible_file = AudioUtils.ensure_sip_compatible_format(self.response_voice_file)
-            if not compatible_file:
-                logger.error(f"无法将响应语音文件转换为SIP兼容格式: {self.response_voice_file}")
-                return
+            # 检查文件扩展名
+            if self.response_voice_file.lower().endswith('.mp3'):
+                logger.info(f"检测到MP3响应文件: {self.response_voice_file}")
+                # MP3文件需要转换为WAV格式
+                self._convert_mp3_to_wav(self.response_voice_file)
+                # 转换后的文件路径
+                self.response_voice_file = self.response_voice_file.rsplit('.', 1)[0] + '.wav'
                 
-            self.response_voice_file = compatible_file
-            logger.info(f"响应语音文件加载成功: {self.response_voice_file}")
+            with wave.open(self.response_voice_file, 'rb') as wf:
+                if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getframerate() != 8000:
+                    logger.warning("响应语音文件不是单声道、16位、8kHz采样率，尝试转换...")
+                    self._convert_to_compatible_wav(self.response_voice_file)
+                logger.info(f"响应语音文件加载成功: {self.response_voice_file}")
         except Exception as e:
             logger.error(f"加载响应语音文件失败: {e}")
 
@@ -277,10 +333,6 @@ class SIPCall(pj.Call):
                     play_response_callback=self.play_response_direct
                 )
                 logger.info("实时转录线程已启动")
-                
-                # 启动一个新线程来处理转录队列
-                self.start_transcription_queue_processor()
-                
                 return True
             else:
                 logger.error("无法启动转录：录音文件或Whisper模型未准备好")
@@ -288,76 +340,6 @@ class SIPCall(pj.Call):
         except Exception as e:
             logger.error(f"启动实时转录线程失败: {e}")
             return False
-
-    def start_transcription_queue_processor(self):
-        """启动转录队列处理器线程"""
-        try:
-            self.queue_processor_active = True
-            self.queue_processor_thread = threading.Thread(
-                target=self._transcription_queue_processor_loop,
-                daemon=True
-            )
-            self.queue_processor_thread.start()
-            logger.info("转录队列处理线程已启动")
-            return True
-        except Exception as e:
-            logger.error(f"启动转录队列处理线程失败: {e}")
-            self.queue_processor_active = False
-            return False
-
-    def _transcription_queue_processor_loop(self):
-        """转录队列处理循环"""
-        try:
-            logger.info("开始转录队列处理循环")
-            check_interval = 0.5  # 检查队列的时间间隔
-            min_silence_before_response = 3.0  # 检测到多少秒静音后开始响应
-            last_transcription_time = 0
-            response_triggered = False
-            
-            while self.queue_processor_active:
-                # 检查转录器是否还在运行
-                if not hasattr(self, 'transcriber') or not self.transcriber:
-                    logger.warning("转录器不存在，退出队列处理循环")
-                    break
-                    
-                # 检查是否有新的转录结果
-                if self.transcriber.has_new_transcription():
-                    # 获取所有新转录结果
-                    new_texts = self.transcriber.get_all_transcriptions()
-                    if new_texts:
-                        # 记录收到新转录的时间
-                        last_transcription_time = time.time()
-                        # 记录转录内容
-                        for text in new_texts:
-                            logger.info(f"从队列获取转录结果: {text}")
-                            # 在这里可以对接收到的转录结果进行处理，如保存到文件等
-                        
-                        # 重置响应触发标志
-                        response_triggered = False
-                
-                # 检查是否需要播放响应
-                # 策略：如果一段时间内没有新的转录结果，认为对方说话暂停，此时播放响应
-                if not response_triggered and last_transcription_time > 0:
-                    time_since_last = time.time() - last_transcription_time
-                    if time_since_last >= min_silence_before_response:
-                        logger.info(f"检测到 {time_since_last:.1f}秒 没有新转录，准备播放响应")
-                        # 播放响应
-                        self.play_response_direct()
-                        # 标记已触发响应
-                        response_triggered = True
-                        # 重置最后转录时间
-                        last_transcription_time = 0
-                
-                # 短暂休眠
-                time.sleep(check_interval)
-                
-            logger.info("转录队列处理循环结束")
-        except Exception as e:
-            logger.error(f"转录队列处理循环出错: {e}")
-            import traceback
-            logger.error(f"详细错误: {traceback.format_exc()}")
-        
-        self.queue_processor_active = False
 
     def handle_transcription_result(self, text):
         """处理转录结果的回调函数"""
@@ -369,9 +351,12 @@ class SIPCall(pj.Call):
                 self.transcription_history = []
             self.transcription_history.append(text)
             
-            # 这里不再直接设置播放标志，而是让队列处理器决定何时播放响应
-            # self.should_play_response = True
-
+            # 检测到有效语音，准备播放响应
+            # 此处可以添加关键词匹配或其他业务逻辑
+            
+            # 设置标志，让播放响应回调能够执行
+            self.should_play_response = True
+            
     def transcribe_audio(self):
         """使用Whisper转录录音文件"""
         try:
@@ -478,6 +463,9 @@ class SIPCall(pj.Call):
                         logger.info("初始化实时语音转录...")
                         # 启动transcriber_thread
                         self.start_realtime_transcription_thread()
+                        
+                        # 启动响应检查线程
+                        self.start_response_check_thread()
                 
             elif ci.state == pj.PJSIP_INV_STATE_DISCONNECTED:
                 logger.info(f"通话已结束: 状态码={ci.lastStatusCode}, 原因={ci.lastReason}")
@@ -495,11 +483,11 @@ class SIPCall(pj.Call):
                     logger.info("停止实时语音转录")
                     self.transcriber.stop_transcription()
                 
-                # 停止转录队列处理器
-                if hasattr(self, 'queue_processor_active'):
-                    self.queue_processor_active = False
-                    if hasattr(self, 'queue_processor_thread') and self.queue_processor_thread:
-                        self.queue_processor_thread.join(timeout=2)
+                # 停止响应检查线程
+                if hasattr(self, 'response_check_active'):
+                    self.response_check_active = False
+                    if hasattr(self, 'response_check_thread') and self.response_check_thread:
+                        self.response_check_thread.join(timeout=2)
                 
                 # 停止录音
                 if self.recorder:
@@ -508,23 +496,56 @@ class SIPCall(pj.Call):
                     # 转录通话录音
                     self.transcribe_audio()
                     
-                # 保存转录历史记录
-                self.save_transcription_history()
-                
         except Exception as e:
             logger.error(f"处理呼叫状态变化时出错: {e}")
             import traceback
             logger.error(f"详细错误: {traceback.format_exc()}")
 
+    def start_response_check_thread(self):
+        """启动响应检查线程"""
+        try:
+            self.response_check_active = True
+            self.response_check_thread = threading.Thread(
+                target=self._response_check_loop,
+                daemon=True
+            )
+            self.response_check_thread.start()
+            logger.info("响应检查线程已启动")
+            return True
+        except Exception as e:
+            logger.error(f"启动响应检查线程失败: {e}")
+            return False
+            
+    def _response_check_loop(self):
+        """响应检查循环"""
+        try:
+            check_count = 0
+            max_checks = 60  # 30秒
+            
+            while self.response_check_active and check_count < max_checks:
+                check_count += 1
+                
+                # 简单的标志检查
+                if hasattr(self, 'should_play_response') and self.should_play_response:
+                    logger.info("检测到should_play_response标志，标记为下一次媒体状态变化时播放")
+                    # 将标志保持为True，等待下一次媒体状态变化时播放
+                    time.sleep(0.5)
+                    continue
+                
+                time.sleep(0.5)
+                
+            logger.info("响应检查线程结束")
+            
+        except Exception as e:
+            logger.error(f"响应检查线程出错: {e}")
+            import traceback
+            logger.error(f"详细错误: {traceback.format_exc()}")
+        
+        self.response_check_active = False
+
     def play_response_direct(self):
         """通过SIP通话直接播放响应文件给对方听"""
         try:
-            # 如果已经播放过响应，检查是否允许重复播放
-            if self.has_played_response:
-                # 默认不允许重复播放
-                logger.info("已经播放过响应，不再重复播放")
-                return False
-            
             if not self.response_voice_file or not os.path.exists(self.response_voice_file):
                 logger.error(f"响应语音文件不存在: {self.response_voice_file}")
                 return False
@@ -546,13 +567,8 @@ class SIPCall(pj.Call):
             
             # 创建音频播放器
             try:
-                # 增加响应音量 (可选)
-                # enhanced_voice_file = AudioUtils.enhance_audio_volume(self.response_voice_file, 1.5)
-                # play_file = enhanced_voice_file
-                play_file = self.response_voice_file
-                
                 player = pj.AudioMediaPlayer()
-                player.createPlayer(play_file)
+                player.createPlayer(self.response_voice_file)
                 logger.info(f"音频播放器创建成功")
                 
                 # 开始传输到呼叫的音频媒体
@@ -562,64 +578,22 @@ class SIPCall(pj.Call):
                 # 标记为已播放响应
                 self.has_played_response = True
                 
+                # 重置标志
+                self.should_play_response = False
+                
                 return True
             except Exception as e:
                 logger.error(f"创建音频播放器或播放失败: {e}")
                 import traceback
                 logger.error(f"详细错误: {traceback.format_exc()}")
                 
-                # 设置标志以在下一次媒体状态变化时尝试播放
+                # 尝试在下一次媒体状态变化时播放
+                logger.info("设置标志以在下一次媒体状态变化时尝试播放")
                 self.should_play_response = True
                 return False
                 
         except Exception as e:
             logger.error(f"播放响应过程中出错: {e}")
-            import traceback
-            logger.error(f"详细错误: {traceback.format_exc()}")
-            return False
-
-    def save_transcription_history(self, output_path=None):
-        """将转录历史记录保存到文件
-        
-        Args:
-            output_path: 输出文件路径，如果为None则自动生成
-            
-        Returns:
-            bool: 是否成功保存
-        """
-        try:
-            if not hasattr(self, 'transcription_history') or not self.transcription_history:
-                logger.warning("没有转录历史记录可保存")
-                return False
-            
-            # 如果未指定输出路径，则使用录音文件名加上_transcript.txt
-            if not output_path and self.recording_file:
-                output_path = f"{os.path.splitext(self.recording_file)[0]}_transcript.txt"
-            elif not output_path:
-                # 如果没有录音文件，则使用时间戳
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                output_path = f"transcript_{timestamp}.txt"
-            
-            # 确保输出目录存在
-            output_dir = os.path.dirname(output_path)
-            if output_dir and not os.path.exists(output_dir):
-                os.makedirs(output_dir, exist_ok=True)
-            
-            # 写入文件
-            with open(output_path, 'w', encoding='utf-8') as f:
-                # 添加时间戳作为标题
-                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                phone_info = f"电话：{self.phone_number}" if self.phone_number else ""
-                f.write(f"=== 通话转录 {timestamp} {phone_info} ===\n\n")
-                
-                # 写入每条转录记录
-                for i, text in enumerate(self.transcription_history, 1):
-                    f.write(f"{i}. {text}\n")
-                
-            logger.info(f"转录历史已保存到: {output_path}")
-            return True
-        except Exception as e:
-            logger.error(f"保存转录历史失败: {e}")
             import traceback
             logger.error(f"详细错误: {traceback.format_exc()}")
             return False
@@ -712,6 +686,11 @@ class SIPCaller:
             logger.info(f"SIP URI: {sip_uri}")
             logger.info(f"SIP账户: {self.config.get('username', '')}@{self.config.get('server', '')}:{self.config.get('port', '')}")
             
+            # 如果未指定语音文件，但config中提供了语音文件路径，则使用它
+            if not voice_file and 'voice_file' in self.config:
+                voice_file = self.config['voice_file']
+                logger.info(f"使用配置中的语音文件: {voice_file}")
+                
             # 如果未指定响应语音文件，且config中有tts_text，则生成语音文件
             if not response_voice_file and 'tts_text' in self.config:                
                 try:

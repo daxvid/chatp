@@ -5,9 +5,6 @@ import edge_tts
 import subprocess
 import logging
 
-# 引入AudioUtils类
-from audio_utils import AudioUtils
-
 logger = logging.getLogger("tts")
 
 class TTSManager:
@@ -21,7 +18,7 @@ class TTSManager:
         try:
             # 创建文件名（使用文本的哈希值）
             text_hash = hashlib.md5(text.encode()).hexdigest()
-            temp_file = os.path.join(self.cache_dir, f"{text_hash}_{voice}.temp")
+            mp3_path = os.path.join(self.cache_dir, f"{text_hash}_{voice}.mp3")
             wav_path = os.path.join(self.cache_dir, f"{text_hash}_{voice}.wav")
             
             # 如果已经生成过，直接返回
@@ -32,29 +29,11 @@ class TTSManager:
             # 生成语音
             logger.info(f"正在使用edge-tts生成语音: '{text}'")
             communicate = edge_tts.Communicate(text, voice)
+            await communicate.save(mp3_path)
+            logger.info(f"TTS生成成功: {mp3_path}")
             
-            # 直接生成WAV文件
-            await communicate.save(temp_file)
-            logger.info(f"TTS生成成功: {temp_file}")
-            
-            # 转换为SIP兼容格式
-            converted_wav = AudioUtils.ensure_sip_compatible_format(
-                temp_file, 
-                wav_path, 
-                sample_rate=8000, 
-                channels=1
-            )
-            
-            # 清理临时文件
-            try:
-                if os.path.exists(temp_file):
-                    os.remove(temp_file)
-            except Exception as e:
-                logger.warning(f"无法删除临时文件: {e}")
-                
-            if not converted_wav:
-                logger.error(f"无法将TTS文件转换为SIP兼容格式")
-                return None
+            # 转换为WAV格式
+            self._convert_mp3_to_wav(mp3_path, wav_path)
             
             return wav_path
         except Exception as e:
@@ -62,6 +41,27 @@ class TTSManager:
             import traceback
             logger.error(f"详细错误: {traceback.format_exc()}")
             return None
+            
+    def _convert_mp3_to_wav(self, mp3_file, wav_file):
+        """将MP3文件转换为PJSIP兼容的WAV格式"""
+        try:
+            # 使用ffmpeg转换
+            cmd = [
+                'ffmpeg', '-y', 
+                '-i', mp3_file, 
+                '-acodec', 'pcm_s16le', 
+                '-ar', '8000', 
+                '-ac', '1', 
+                wav_file
+            ]
+            
+            logger.info(f"转换MP3到WAV: {' '.join(cmd)}")
+            subprocess.run(cmd, check=True)
+            logger.info(f"MP3成功转换为WAV: {wav_file}")
+            
+        except Exception as e:
+            logger.error(f"MP3转换失败: {e}")
+            raise
     
     def generate_tts_sync(self, text, voice="zh-CN-XiaoxiaoNeural"):
         """同步版本的TTS生成函数"""

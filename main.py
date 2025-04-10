@@ -7,7 +7,6 @@ import edge_tts
 import traceback
 import signal
 import sys
-import argparse  # 添加参数解析模块
 import pjsua2 as pj  # 确保正确导入
 from threading import Event
 
@@ -54,24 +53,12 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
-def parse_arguments():
-    """解析命令行参数"""
-    parser = argparse.ArgumentParser(description='自动电话系统')
-    parser.add_argument('--debug', '-d', action='store_true', help='启用调试模式')
-    return parser.parse_args()
-
 def main():
     """主程序入口"""
     global sip_caller
     try:
-        # 解析命令行参数
-        args = parse_arguments()
-        
-        # 设置日志级别
-        if args.debug:
-            logging.getLogger().setLevel(logging.DEBUG)
-        else:
-            logging.getLogger().setLevel(logging.INFO)
+        # 设置最详细的日志级别
+        logging.getLogger().setLevel(logging.DEBUG)
         
         logger.info("===== 自动电话呼叫系统启动 =====")
         logger.info(f"Python版本: {sys.version}")
@@ -92,6 +79,12 @@ def main():
         # 验证tel.txt文件存在
         if not os.path.exists(call_list_file):
             logger.error(f"电话号码列表文件不存在: {call_list_file}")
+            logger.info("创建一个示例tel.txt文件...")
+            with open(call_list_file, 'w', encoding='utf-8') as f:
+                f.write("10086\n")  # 添加一个示例号码
+                f.write("10000\n")
+                f.write(sip_config.get('target_number', '10010'))
+            logger.info(f"已创建示例文件 {call_list_file}，请编辑后重新运行程序")
             return
             
         # 初始化TTS引擎
@@ -117,6 +110,7 @@ def main():
             logger.error("SIP客户端初始化不完整，无法进行呼叫")
             return
 
+        # test_call(sip_caller)
 
         # 初始化呼叫管理器
         logger.info("初始化呼叫管理器...")
@@ -152,7 +146,7 @@ def main():
                 
             logger.info(f"正在处理第 {i+1}/{len(call_list)} 个号码: {phone_number}")
             
-            # 拨打电话，使用命令行指定的语音文件
+            # 拨打电话
             result = call_manager.make_call_with_tts(
                 phone_number, 
                 tts_config['text'], 
@@ -256,6 +250,8 @@ def main():
             sip_caller.stop()
             logger.info("SIP服务已停止")
 
+
+def test_call(sip_caller):
     # 简化测试URI，只用最简单的一种格式
     test_number = "13344445555"  # 使用测试号码
     # 测试拨打

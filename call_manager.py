@@ -129,6 +129,9 @@ class CallManager:
                     self.sip_caller.hangup()
                     result['status'] = '接通超时'
                 else:
+                    # 移除这段代码 - 不在这里等待通话结束
+                    # 这部分会造成并发拨号问题
+                    # 因为main.py中已经有等待逻辑了
                     # 只检查通话是否已断开
                     if self.sip_caller.current_call:
                         try:
@@ -139,6 +142,9 @@ class CallManager:
                                 logger.info(f"电话 {phone_number} 正在进行中，状态：{call_info.state}")
                         except Exception as e:
                             logger.warning(f"获取最终呼叫状态异常: {e}")
+                
+                # 不要再在这里挂断电话 - 由main.py控制通话结束
+                # 只做状态检查和数据收集
                 
                 # 计算通话时长
                 duration = (datetime.now() - start_time).total_seconds()
@@ -191,6 +197,7 @@ class CallManager:
             
             return None
             
+    def process_calls(self, tts_text, tts_voice, log_file, interval=5):
         """处理所有呼叫 - 已由main.py中的调用逻辑替代"""
         logger.warning("此方法已弃用，请使用main.py中的呼叫处理逻辑")
         

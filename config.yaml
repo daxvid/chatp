@@ -9,9 +9,8 @@ sip:
   keep_alive: 15                          # 保活时间（秒）
   #bind_ip: "0.0.0.0"  # 可选
   #bind_port: 5060
-tts:
-  text: "您好, 我是九一的客服小微,您已获取得系统返还的100元的奖金,请您登录九一软件领取,有效时间30天"
-  voice: "zh-CN-XiaoxiaoNeural"
+  tts_text: "您好, 我是九一的客服小微,您已获取得系统返还的100元的奖金,请您登录九一软件领取,有效时间30天"
+  ttsvoice: "zh-CN-XiaoxiaoNeural"
 
 call:
   list_file: "tel.txt"  # 电话号码列表文件，每行一个号码

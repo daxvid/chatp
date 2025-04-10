@@ -5,10 +5,6 @@ import shutil
 import threading
 import subprocess
 import traceback
-import queue  # 添加queue模块导入，用于线程安全队列
-
-# 引入AudioUtils类
-from audio_utils import AudioUtils
 
 # 尝试导入常用音频处理库
 HAVE_SOUNDFILE = False
@@ -45,11 +41,6 @@ class WhisperTranscriber:
         self.recording_file = None
         self.response_callback = None
         self.play_response_callback = None
-        
-        # 添加线程安全的识别结果队列
-        self.transcription_queue = queue.Queue()
-        # 是否已经通知过有新识别结果
-        self.notified_new_transcription = False
     
     def set_model(self, model):
         """设置Whisper模型"""
@@ -131,13 +122,6 @@ class WhisperTranscriber:
             self.response_callback = response_callback
             self.play_response_callback = play_response_callback
             
-            # 清空转录队列
-            while not self.transcription_queue.empty():
-                self.transcription_queue.get()
-            
-            # 重置通知标志
-            self.notified_new_transcription = False
-            
             # 创建线程，但不立即启动，等待录音启动完成
             self.transcriber_active = True
             self.transcriber_thread = threading.Thread(
@@ -160,42 +144,6 @@ class WhisperTranscriber:
                 self.transcriber_thread = None
             logger.info("实时语音转录已停止")
     
-    def has_new_transcription(self):
-        """检查是否有新的转录结果
-        
-        Returns:
-            bool: 是否有新的转录结果
-        """
-        return not self.transcription_queue.empty()
-    
-    def get_next_transcription(self):
-        """获取下一个转录结果，如果队列为空则返回None
-        
-        Returns:
-            str or None: 下一个转录结果
-        """
-        try:
-            if self.transcription_queue.empty():
-                return None
-            text = self.transcription_queue.get(block=False)
-            return text
-        except queue.Empty:
-            return None
-    
-    def get_all_transcriptions(self):
-        """获取所有转录结果
-        
-        Returns:
-            list: 所有转录结果的列表
-        """
-        results = []
-        try:
-            while not self.transcription_queue.empty():
-                results.append(self.transcription_queue.get(block=False))
-        except queue.Empty:
-            pass
-        return results
-    
     def _realtime_transcription_loop(self):
         """实时转录循环"""
         try:
@@ -204,6 +152,7 @@ class WhisperTranscriber:
             last_transcription_time = time.time()
             min_chunk_size = 8000  # 至少8KB新数据才处理
             segment_count = 0
+            has_played_response = False
             
             # 等待录音文件创建
             while self.transcriber_active and not os.path.exists(self.recording_file):
@@ -249,33 +198,39 @@ class WhisperTranscriber:
                             # 复制整个录音文件
                             shutil.copy2(self.recording_file, segment_file)
                             
-                            # 使用AudioUtils预处理音频，确保格式正确
+                            # 使用ffmpeg预处理音频，确保格式正确
                             processed_file = os.path.join(segment_dir, f"processed_{segment_count}.wav")
                             try:
-                                # 使用AudioUtils转换音频格式为Whisper兼容格式(16kHz)
-                                processed_wav = AudioUtils.ensure_sip_compatible_format(
-                                    segment_file, 
-                                    processed_file, 
-                                    sample_rate=16000,  # Whisper通常使用16kHz
-                                    channels=1
-                                )
+                                # 使用ffmpeg规范化音频
+                                cmd = [
+                                    "ffmpeg", "-y", 
+                                    "-i", segment_file, 
+                                    "-ar", "16000",  # 采样率16kHz
+                                    "-ac", "1",      # 单声道
+                                    "-c:a", "pcm_s16le",  # 16位PCM
+                                    processed_file
+                                ]
+                                subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                logger.info(f"音频预处理成功: {processed_file}")
                                 
-                                if processed_wav and os.path.exists(processed_wav):
-                                    logger.info(f"音频预处理成功: {processed_wav}")
-                                    
+                                # 检查预处理文件
+                                if os.path.exists(processed_file) and os.path.getsize(processed_file) > 1000:
                                     # 转录处理
-                                    text = self._transcribe_segment(processed_wav, segment_count)
+                                    text = self._transcribe_segment(processed_file, segment_count)
                                     
-                                    # 如果成功识别到文本，将其添加到转录队列
-                                    if text:
-                                        logger.info(f"将转录结果添加到队列: '{text}'")
-                                        self.transcription_queue.put(text)
+                                    # 如果成功识别到文本，立即播放响应
+                                    if text and not has_played_response:
+                                        logger.info(f"首次检测到对方语音: '{text}'，准备立即播放响应")
                                         
-                                        # 通知有新的转录结果
+                                        # 先调用转录结果回调函数
                                         if self.response_callback:
                                             self.response_callback(text)
-                                            # 标记已通知
-                                            self.notified_new_transcription = True
+                                        
+                                        # 立即播放响应
+                                        if self.play_response_callback:
+                                            logger.info("立即调用播放响应回调")
+                                            self.play_response_callback()
+                                            has_played_response = True
                                 else:
                                     logger.info(f"预处理后的音频文件过小或不存在: {processed_file}")
                             except Exception as e:

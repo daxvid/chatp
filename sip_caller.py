@@ -547,6 +547,7 @@ class SIPCall(pj.Call):
             min_chunk_size = 8000  # 至少8KB新数据才处理
             segment_count = 0
             has_played_response = False
+            max_retries = 3  # 添加重试次数
             
             # 等待录音文件创建
             while self.transcriber_active and not os.path.exists(self.recording_file):
@@ -613,60 +614,120 @@ class SIPCall(pj.Call):
                                     # 使用简单直接的方式转录
                                     text = None
                                     if self.whisper_model:
-                                        try:
-                                            # 直接调用Whisper API
-                                            result = self.whisper_model.transcribe(
-                                                processed_file,
-                                                language="zh",
-                                                fp16=False
-                                            )
-                                            text = result.get("text", "").strip()
-                                            
-                                            if text:
-                                                logger.info(f"语音识别结果 (段{segment_count}): {text}")
+                                        # 添加重试机制
+                                        retry_count = 0
+                                        while retry_count < max_retries:
+                                            try:
+                                                # 直接使用文件路径，没有soundfile，使用原始方法
+                                                logger.info(f"尝试转录音频段 {segment_count} (尝试 {retry_count+1}/{max_retries}) - 使用原始方法")
+                                                result = self.whisper_model.transcribe(
+                                                    processed_file,
+                                                    language="zh",
+                                                    fp16=False
+                                                )
+                                                text = result.get("text", "").strip()
                                                 
-                                                # 在第一次成功识别后，设置标记
-                                                if not has_played_response and self.response_voice_file and os.path.exists(self.response_voice_file):
-                                                    logger.info(f"检测到语音，设置响应播放标记: {self.response_voice_file}")
-                                                    self.should_play_response = True
-                                                    has_played_response = True
+                                                if text:
+                                                    logger.info(f"语音识别结果 (段{segment_count}): {text}")
                                                     
-                                                    # 触发一次媒体状态变化，以便播放响应
-                                                    try:
-                                                        # 使用简单的方式触发媒体状态改变
-                                                        logger.info("尝试触发媒体状态变化以播放响应")
+                                                    # 在第一次成功识别后，设置标记并播放响应
+                                                    if not has_played_response and self.response_voice_file and os.path.exists(self.response_voice_file):
+                                                        logger.info(f"检测到语音，设置响应播放标记: {self.response_voice_file}")
+                                                        self.should_play_response = True
+                                                        has_played_response = True
                                                         
-                                                        # 创建一个临时播放器、播放静音片段再停止，以触发媒体状态变化
-                                                        # 这是一个方便的小技巧，实际不会播放声音
-                                                        try:
-                                                            import tempfile
+                                                        # 播放响应
+                                                        self.play_response_direct()
+                                                else:
+                                                    logger.info(f"语音识别结果为空 (段{segment_count})")
+                                                
+                                                # 成功则跳出重试循环
+                                                break
+                                                
+                                            except Exception as e:
+                                                retry_count += 1
+                                                logger.error(f"转录尝试 {retry_count}/{max_retries} 失败: {e}")
+                                                import traceback
+                                                logger.error(f"详细错误: {traceback.format_exc()}")
+                                                
+                                                # 额外的尝试，通过复制一个新的临时文件
+                                                if retry_count < max_retries:
+                                                    try:
+                                                        # 重新复制一个文件尝试
+                                                        retry_file = os.path.join(segment_dir, f"retry_{segment_count}_{retry_count}.wav")
+                                                        shutil.copy2(processed_file, retry_file)
+                                                        logger.info(f"尝试使用新复制的文件: {retry_file}")
+                                                        
+                                                        result = self.whisper_model.transcribe(
+                                                            retry_file,
+                                                            language="zh",
+                                                            fp16=False
+                                                        )
+                                                        text = result.get("text", "").strip()
+                                                        
+                                                        if text:
+                                                            logger.info(f"语音识别结果 (段{segment_count}-重试): {text}")
                                                             
-                                                            # 创建一个包含100毫秒静音的WAV文件
-                                                            silence_file = tempfile.mktemp(suffix=".wav")
-                                                            with wave.open(silence_file, 'wb') as wf:
-                                                                wf.setnchannels(1)
-                                                                wf.setsampwidth(2)
-                                                                wf.setframerate(8000)
-                                                                wf.writeframes(b'\x00' * 1600)  # 100ms的静音
+                                                            # 在第一次成功识别后，设置标记
+                                                            if not has_played_response and self.response_voice_file and os.path.exists(self.response_voice_file):
+                                                                logger.info(f"检测到语音，设置响应播放标记: {self.response_voice_file}")
+                                                                self.should_play_response = True
+                                                                has_played_response = True
                                                                 
-                                                            # 直接播放响应文件
-                                                            self.play_response_direct()
-                                                            
+                                                                # 播放响应
+                                                                self.play_response_direct()
+                                                                
                                                             # 清理临时文件
                                                             try:
-                                                                os.remove(silence_file)
+                                                                os.remove(retry_file)
                                                             except:
                                                                 pass
-                                                        except Exception as e:
-                                                            logger.error(f"触发媒体状态变化失败: {e}")
-                                                    except Exception as e:
-                                                        logger.error(f"触发媒体状态变化时出错: {e}")
-                                            else:
-                                                logger.info(f"语音识别结果为空 (段{segment_count})")
-                                        except Exception as e:
-                                            logger.error(f"转录过程中出错: {e}")
-                                            import traceback
-                                            logger.error(f"详细错误: {traceback.format_exc()}")
+                                                                
+                                                            # 成功则跳出重试循环
+                                                            break
+                                                    except Exception as er:
+                                                        logger.error(f"重试文件处理失败: {er}")
+                                                
+                                                if retry_count >= max_retries:
+                                                    logger.error(f"转录段 {segment_count} 失败，已达最大尝试次数")
+                                                    # 尝试使用替代方法
+                                                    try:
+                                                        logger.info(f"尝试使用替代方法转录...")
+                                                        
+                                                        # 尝试使用系统命令转录（如果安装了whisper命令行工具）
+                                                        try:
+                                                            cmd = [
+                                                                "whisper", processed_file,
+                                                                "--language", "zh",
+                                                                "--model", "small",
+                                                                "--output_format", "txt",
+                                                                "--output_dir", segment_dir
+                                                            ]
+                                                            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                                                            output_file = os.path.join(segment_dir, f"processed_{segment_count}.txt")
+                                                            
+                                                            if os.path.exists(output_file):
+                                                                with open(output_file, 'r', encoding='utf-8') as f:
+                                                                    text = f.read().strip()
+                                                                    if text:
+                                                                        logger.info(f"替代方法语音识别结果 (段{segment_count}): {text}")
+                                                                        
+                                                                        # 设置响应播放标记
+                                                                        if not has_played_response and self.response_voice_file and os.path.exists(self.response_voice_file):
+                                                                            self.should_play_response = True
+                                                                            has_played_response = True
+                                                                            
+                                                                            # 播放响应
+                                                                            self.play_response_direct()
+                                                        except Exception as e3:
+                                                            logger.error(f"替代转录方法也失败: {e3}")
+                                                    except Exception as e2:
+                                                        logger.error(f"尝试替代方法失败: {e2}")
+                                                
+                                                # 等待一会再重试
+                                                time.sleep(1)
+                                    else:
+                                        logger.warning("Whisper模型未加载，无法进行语音识别")
                                 else:
                                     logger.warning(f"预处理后的音频文件过小或不存在: {processed_file}")
                             except Exception as e:

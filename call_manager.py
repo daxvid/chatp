@@ -64,31 +64,21 @@ class CallManager:
             logger.error(f"保存呼叫结果失败: {e}")
             return False
             
-    def make_call_with_tts(self, phone_number, text, voice="zh-CN-XiaoxiaoNeural", voice_file=None, response_voice_file=None):
+    def make_call_with_tts(self, phone_number, text, voice="zh-CN-XiaoxiaoNeural"):
         """使用TTS拨打电话"""
         try:
             logger.info(f"准备拨打电话 {phone_number}...")
             
-            # 使用指定的语音文件或生成新的语音文件
-            if voice_file and os.path.exists(voice_file):
-                logger.info(f"使用指定的语音文件: {voice_file}")
-                wav_file = voice_file
-            else:
-                # 生成语音文件
-                logger.info(f"生成语音: '{text[:30]}...'")
-                wav_file = self.tts_manager.generate_tts_sync(text, voice)
-                if not wav_file:
-                    logger.error("TTS生成失败，无法拨打电话")
-                    return None
-                logger.info(f"语音文件生成成功: {wav_file}")
+            # 生成语音文件
+            logger.info(f"生成语音: '{text[:30]}...'")
+            wav_file = self.tts_manager.generate_tts_sync(text, voice)
+            if not wav_file:
+                logger.error("TTS生成失败，无法拨打电话")
+                return None
+            logger.info(f"语音文件生成成功: {wav_file}")
                 
             # 设置Whisper模型
             self.sip_caller.set_whisper_model(self.whisper_manager.model)
-            
-            # 如果指定了响应语音文件，设置到SIP呼叫中
-            if response_voice_file and os.path.exists(response_voice_file):
-                logger.info(f"设置响应语音文件: {response_voice_file}")
-                self.sip_caller.set_response_voice_file(response_voice_file)
                 
             # 记录开始时间
             start_time = datetime.now()
@@ -139,9 +129,6 @@ class CallManager:
                     self.sip_caller.hangup()
                     result['status'] = '接通超时'
                 else:
-                    # 移除这段代码 - 不在这里等待通话结束
-                    # 这部分会造成并发拨号问题
-                    # 因为main.py中已经有等待逻辑了
                     # 只检查通话是否已断开
                     if self.sip_caller.current_call:
                         try:
@@ -152,9 +139,6 @@ class CallManager:
                                 logger.info(f"电话 {phone_number} 正在进行中，状态：{call_info.state}")
                         except Exception as e:
                             logger.warning(f"获取最终呼叫状态异常: {e}")
-                
-                # 不要再在这里挂断电话 - 由main.py控制通话结束
-                # 只做状态检查和数据收集
                 
                 # 计算通话时长
                 duration = (datetime.now() - start_time).total_seconds()
@@ -207,7 +191,6 @@ class CallManager:
             
             return None
             
-    def process_calls(self, tts_text, tts_voice, log_file, interval=5):
         """处理所有呼叫 - 已由main.py中的调用逻辑替代"""
         logger.warning("此方法已弃用，请使用main.py中的呼叫处理逻辑")
         

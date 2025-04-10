@@ -27,14 +27,11 @@ class ConfigManager:
         
     def get_tts_config(self):
         """获取TTS配置"""
-        return {
-            'text': self.config.get('sip', {}).get('tts_text', ''),
-            'voice': self.config.get('sip', {}).get('tts_voice', 'zh-CN-XiaoxiaoNeural')
-        }
+        return self.config.get('tts', {})
         
     def get_voice_file(self):
         """获取语音文件路径（已弃用）
-        
+
         Note:
             此方法已弃用，请通过命令行参数直接指定语音文件
         
@@ -43,10 +40,6 @@ class ConfigManager:
         """
         # 不再从配置文件获取默认语音文件
         return ''
-        
-    def get_target_number(self):
-        """获取目标号码"""
-        return self.config.get('sip', {}).get('target_number', '')
 
     def get_call_list_file(self):
         """获取电话号码列表文件"""

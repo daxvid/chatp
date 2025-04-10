@@ -1,6 +1,7 @@
-pjsua2
+pjsua2>=2.15.1
 openai-whisper==20240930
-edge-tts
-pyyaml
+edge-tts>=6.0.4
+pyyaml>=6.0
+numpy>=1.22.4
 scikit-learn
-numpy
+scipy>=1.10.0

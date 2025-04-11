@@ -168,7 +168,6 @@ class WhisperTranscriber:
             except Exception as e:
                 retry_count += 1
                 logger.error(f"转录尝试 {retry_count}/{max_retries} 失败: {e}")
-                logger.error(f"详细错误: {traceback.format_exc()}")
                 
                 # 尝试使用复制的文件
                 if retry_count < max_retries:

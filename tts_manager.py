@@ -14,11 +14,10 @@ class TTSManager:
         os.makedirs(self.cache_dir, exist_ok=True)
         
     async def generate_tts(self, text, voice="zh-CN-XiaoxiaoNeural"):
-        """使用edge-tts生成语音文件"""
+        """使用edge-tts直接生成WAV语音文件"""
         try:
             # 创建文件名（使用文本的哈希值）
             text_hash = hashlib.md5(text.encode()).hexdigest()
-            mp3_path = os.path.join(self.cache_dir, f"{text_hash}_{voice}.mp3")
             wav_path = os.path.join(self.cache_dir, f"{text_hash}_{voice}.wav")
             
             # 如果已经生成过，直接返回
@@ -26,14 +25,46 @@ class TTSManager:
                 logger.info(f"使用缓存的TTS文件: {wav_path}")
                 return wav_path
                 
+            # 创建临时PCM文件
+            pcm_path = os.path.join(self.cache_dir, f"{text_hash}_{voice}_temp.pcm")
+            
             # 生成语音
             logger.info(f"正在使用edge-tts生成语音: '{text}'")
             communicate = edge_tts.Communicate(text, voice)
-            await communicate.save(mp3_path)
-            logger.info(f"TTS生成成功: {mp3_path}")
             
-            # 转换为WAV格式
-            self._convert_mp3_to_wav(mp3_path, wav_path)
+            # 直接生成WAV格式音频
+            try:
+                # 首先使用edge-tts保存为默认格式
+                temp_audio = os.path.join(self.cache_dir, f"{text_hash}_{voice}_temp.mp3")
+                await communicate.save(temp_audio)
+                
+                # 使用ffmpeg直接转换为8000Hz，单声道，16位PCM的WAV格式
+                cmd = [
+                    'ffmpeg', '-y', 
+                    '-i', temp_audio, 
+                    '-acodec', 'pcm_s16le', 
+                    '-ar', '8000', 
+                    '-ac', '1', 
+                    wav_path
+                ]
+                
+                logger.info(f"直接转换为WAV格式: {' '.join(cmd)}")
+                subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                
+                # 删除临时文件
+                try:
+                    if os.path.exists(temp_audio):
+                        os.remove(temp_audio)
+                    if os.path.exists(pcm_path):
+                        os.remove(pcm_path)
+                except Exception as e:
+                    logger.warning(f"无法删除临时文件: {e}")
+                
+                logger.info(f"WAV格式生成成功: {wav_path}")
+            except Exception as e:
+                logger.error(f"WAV格式生成失败: {e}")
+                logger.error(f"详细错误: {traceback.format_exc()}")
+                return None
             
             return wav_path
         except Exception as e:
@@ -42,27 +73,6 @@ class TTSManager:
             logger.error(f"详细错误: {traceback.format_exc()}")
             return None
             
-    def _convert_mp3_to_wav(self, mp3_file, wav_file):
-        """将MP3文件转换为PJSIP兼容的WAV格式"""
-        try:
-            # 使用ffmpeg转换
-            cmd = [
-                'ffmpeg', '-y', 
-                '-i', mp3_file, 
-                '-acodec', 'pcm_s16le', 
-                '-ar', '8000', 
-                '-ac', '1', 
-                wav_file
-            ]
-            
-            logger.info(f"转换MP3到WAV: {' '.join(cmd)}")
-            subprocess.run(cmd, check=True)
-            logger.info(f"MP3成功转换为WAV: {wav_file}")
-            
-        except Exception as e:
-            logger.error(f"MP3转换失败: {e}")
-            raise
-    
     def generate_tts_sync(self, text, voice="zh-CN-XiaoxiaoNeural"):
         """同步版本的TTS生成函数"""
         try:

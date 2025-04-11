@@ -36,10 +36,6 @@ class WhisperTranscriber:
     
     def __init__(self, whisper_model=None):
         self.whisper_model = whisper_model
-        self.transcriber_active = False
-        self.transcriber_thread = None
-        self.recording_file = None
-        self.response_callback = None
     
     def set_model(self, model):
         """设置Whisper模型"""
@@ -110,9 +106,3 @@ class WhisperTranscriber:
             logger.error(f"语音识别失败: {e}")
             logger.error(f"详细错误: {traceback.format_exc()}")
         return None
-
-    def stop_transcription(self):
-        """停止实时语音识别"""
-        if self.transcriber_active:
-            self.transcriber_active = False
-            logger.info("实时语音转录已停止")

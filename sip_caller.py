@@ -270,11 +270,6 @@ class SIPCall(pj.Call):
                 except Exception as e:
                     logger.error(f"停止音频传输时出错: {e}")
                 
-                # 停止实时语音转录
-                if hasattr(self, 'transcriber') and self.transcriber:
-                    logger.info("停止实时语音转录")
-                    self.transcriber.stop_transcription()
-                
                 # 停止录音
                 if self.recorder:
                     self.stop_recording()

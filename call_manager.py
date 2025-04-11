@@ -64,18 +64,10 @@ class CallManager:
             logger.error(f"保存呼叫结果失败: {e}")
             return False
             
-    def make_call_with_tts(self, phone_number, text, voice="zh-CN-XiaoxiaoNeural"):
+    def make_call_with_tts(self, phone_number, wav_file):
         """使用TTS拨打电话"""
         try:
             logger.info(f"准备拨打电话 {phone_number}...")
-            
-            # 生成语音文件
-            logger.info(f"生成语音: '{text[:30]}...'")
-            wav_file = self.tts_manager.generate_tts_sync(text, voice)
-            if not wav_file:
-                logger.error("TTS生成失败，无法拨打电话")
-                return None
-            logger.info(f"语音文件生成成功: {wav_file}")
                 
             # 设置Whisper模型
             self.sip_caller.set_whisper_model(self.whisper_manager.model)
@@ -192,45 +184,3 @@ class CallManager:
             
             return None
             
-    def process_calls(self, tts_text, tts_voice, log_file, interval=5):
-        """处理所有呼叫 - 已由main.py中的调用逻辑替代"""
-        logger.warning("此方法已弃用，请使用main.py中的呼叫处理逻辑")
-        
-        if not self.call_list:
-            logger.error("呼叫列表为空")
-            return False
-            
-        logger.info(f"开始处理呼叫列表，共{len(self.call_list)}个号码")
-        
-        try:
-            for i, phone_number in enumerate(self.call_list):
-                logger.info(f"正在拨打第{i+1}个号码: {phone_number}")
-                
-                # 拨号，但不等待完成
-                result = self.make_call_with_tts(phone_number, tts_text, tts_voice)
-                
-                # 每次呼叫后保存结果
-                self.save_call_results(log_file)
-                
-                # 等待通话结束 - 这里应该交由main.py控制
-                # 只是为了向后兼容才保留此方法
-                if self.sip_caller.current_call and self.sip_caller.current_call.isActive():
-                    logger.info(f"等待电话 {phone_number} 通话结束...")
-                    # 简单等待一段时间让SIPCall回调有机会处理
-                    time.sleep(5)
-                    # 强制结束通话
-                    self.sip_caller.hangup()
-                
-                # 如果不是最后一个号码，等待一段时间再拨下一个
-                if i < len(self.call_list) - 1:
-                    logger.info(f"等待{interval}秒后拨打下一个号码...")
-                    time.sleep(interval)
-                    
-            logger.info("所有呼叫已处理完成")
-            return True
-            
-        except Exception as e:
-            logger.error(f"处理呼叫列表过程中出错: {e}")
-            import traceback
-            logger.error(f"详细错误: {traceback.format_exc()}")
-            return False 

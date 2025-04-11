@@ -131,6 +131,14 @@ def main():
         if not tts_config['text']:
             logger.error("未设置TTS文本，请在配置文件中添加tts_text字段")
             return
+        
+        # 生成语音文件
+        logger.info(f"生成语音: '{text[:30]}...'")
+        wav_file = self.tts_manager.generate_tts_sync( tts_config['text'],  tts_config['voice'])
+        if not wav_file:
+            logger.error("TTS生成失败，无法拨打电话")
+            return
+        logger.info(f"语音文件生成成功: {wav_file}")
             
         # 开始处理呼叫，同时检查退出事件
         logger.info(f"开始处理呼叫，TTS文本: {tts_config['text'][:30]}...")
@@ -148,11 +156,7 @@ def main():
             logger.info(f"正在处理第 {i+1}/{len(call_list)} 个号码: {phone_number}")
             
             # 拨打电话
-            result = call_manager.make_call_with_tts(
-                phone_number, 
-                tts_config['text'], 
-                tts_config['voice']
-            )
+            result = call_manager.make_call_with_tts(phone_number, wav_fil)
             
             # 等待通话完成
             logger.info("等待通话完成...")

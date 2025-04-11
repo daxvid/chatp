@@ -47,6 +47,21 @@ ssl._create_default_https_context = ssl._create_unverified_context
 
 logger = logging.getLogger("sip")
 
+class CustomAudioMediaPlayer(pj.AudioMediaPlayer):
+    """自定义音频播放器，用于处理播放完成回调"""
+    def __init__(self):
+        super().__init__()
+        self.on_eof_callback = None
+        
+    def setEofCallback(self, callback):
+        """设置播放完成回调函数"""
+        self.on_eof_callback = callback
+        
+    def onEof2(self):
+        """播放完成时的回调函数"""
+        if self.on_eof_callback:
+            self.on_eof_callback()
+
 class SIPCall(pj.Call):
     """SIP通话类，继承自pjsua2.Call"""
     def __init__(self, acc, voice_file=None, whisper_model=None, phone_number=None):
@@ -64,6 +79,7 @@ class SIPCall(pj.Call):
         self.ep = None
         self.audio_recorder = None
         self.transcriber = None
+        self.player = None
 
         # 获取全局Endpoint实例，提前准备好
         try:
@@ -281,8 +297,6 @@ class SIPCall(pj.Call):
                 logger.error(f"响应语音文件不存在: {self.voice_file}")
                 return False
                 
-            logger.info(f"准备播放响应音频到通话对方: {self.voice_file}")
-            
             # 设置标志，通知onCallMediaState在媒体状态改变时播放
             self.should_play_response = True
             
@@ -290,26 +304,22 @@ class SIPCall(pj.Call):
             try:
                 # 获取通话媒体
                 audio_media = self.getAudioMedia(-1)
-                
                 if audio_media:
-                    # 创建音频播放器
-                    self.player = pj.AudioMediaPlayer()  # 保存为实例变量防止被回收
-                    self.player.createPlayer(self.voice_file)
+                    # 创建自定义音频播放器
+                    player = CustomAudioMediaPlayer()
+                    # 使用PJMEDIA_FILE_NO_LOOP标志创建播放器
+                    player.createPlayer(self.voice_file, pj.PJMEDIA_FILE_NO_LOOP)
                     
+                    # 注册播放完成回调
+                    def on_playback_complete():
+                        player.stopTransmit(audio_media)
+                        logger.info(f"结束播放语音: {self.voice_file}")
+
+                    player.setEofCallback(on_playback_complete)
                     # 播放到通话媒体
-                    self.player.startTransmit(audio_media)
-                    logger.info("响应语音已开始播放到通话对方")
-                    
-                    # 等待音频播放完成
-                    # 获取音频文件信息
-                    with wave.open(self.voice_file, 'rb') as wav_file:
-                        frames = wav_file.getnframes()
-                        rate = wav_file.getframerate()
-                        duration = frames / float(rate)
-                    
-                    # 等待音频播放完成
-                    time.sleep(duration + 0.5)  # 额外等待0.5秒确保播放完成
-                    logger.info("响应语音播放完成")
+                    player.startTransmit(audio_media)
+                    logger.info(f"开始播放语音: {self.voice_file}")
+                    self.player = player
                     return True
                 else:
                     logger.warning("无法获取音频媒体，将在下一次媒体状态变化时尝试播放")

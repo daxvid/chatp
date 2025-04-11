@@ -139,10 +139,6 @@ class SIPCall(pj.Call):
                     return
                     
                 logger.info("成功获取音频媒体")
-                
-                # 检查是否需要播放响应语音
-                if hasattr(self, 'should_play_response') and self.should_play_response:
-                    self.should_play_response = False  # 重置标志
                     
                 # 处理录音 - 检查是否已经有录音器但尚未连接到音频媒体
                 if self.recorder and not self.audio_recorder:
@@ -192,7 +188,12 @@ class SIPCall(pj.Call):
         if text:
             logger.info(f"收到转录结果: {text}")
             # 这里可以添加其他处理逻辑，如关键词匹配等
-            self.should_play_response = True
+            if "我是" in text:
+                if not self.should_play_response:
+                    self.play_response_direct()
+                # 可以在这里添加其他处理逻辑，例如记录对话开始时间等
+            
+            
             
     def transcribe_audio(self):
         """使用Whisper转录录音文件"""
@@ -204,11 +205,7 @@ class SIPCall(pj.Call):
             if not self.transcriber:
                 self.transcriber = WhisperTranscriber(self.whisper_model)
                 
-            if self.recording_file and os.path.exists(self.recording_file):
-                return self.transcriber.transcribe_file(self.recording_file)
-            else:
-                logger.warning(f"录音文件不存在: {self.recording_file}")
-                return None
+            return self.transcriber.transcribe_file(self.recording_file)
         except Exception as e:
             logger.error(f"转录录音文件失败: {e}")
             import traceback
@@ -244,10 +241,8 @@ class SIPCall(pj.Call):
                 
             elif ci.state == pj.PJSIP_INV_STATE_CONFIRMED:
                 logger.info("通话已接通")
-                
                 # 如果有指定电话号码，启动录音
                 if self.phone_number:
-                    # 启动录音
                     self.start_recording(self.phone_number)
                 
             elif ci.state == pj.PJSIP_INV_STATE_DISCONNECTED:
@@ -265,12 +260,6 @@ class SIPCall(pj.Call):
                 if hasattr(self, 'transcriber') and self.transcriber:
                     logger.info("停止实时语音转录")
                     self.transcriber.stop_transcription()
-                
-                # 停止响应检查线程
-                if hasattr(self, 'response_check_active'):
-                    self.response_check_active = False
-                    if hasattr(self, 'response_check_thread') and self.response_check_thread:
-                        self.response_check_thread.join(timeout=2)
                 
                 # 停止录音
                 if self.recorder:
@@ -304,13 +293,23 @@ class SIPCall(pj.Call):
                 
                 if audio_media:
                     # 创建音频播放器
-                    player = pj.AudioMediaPlayer()
-                    player.createPlayer(self.voice_file)
+                    self.player = pj.AudioMediaPlayer()  # 保存为实例变量防止被回收
+                    self.player.createPlayer(self.voice_file)
                     
                     # 播放到通话媒体
-                    player.startTransmit(audio_media)
+                    self.player.startTransmit(audio_media)
                     logger.info("响应语音已开始播放到通话对方")
                     
+                    # 等待音频播放完成
+                    # 获取音频文件信息
+                    with wave.open(self.voice_file, 'rb') as wav_file:
+                        frames = wav_file.getnframes()
+                        rate = wav_file.getframerate()
+                        duration = frames / float(rate)
+                    
+                    # 等待音频播放完成
+                    time.sleep(duration + 0.5)  # 额外等待0.5秒确保播放完成
+                    logger.info("响应语音播放完成")
                     return True
                 else:
                     logger.warning("无法获取音频媒体，将在下一次媒体状态变化时尝试播放")

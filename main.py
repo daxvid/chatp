@@ -183,7 +183,7 @@ def get_call_metadata(sip_caller):
         if sip_caller.current_call:
             if hasattr(sip_caller.current_call, 'recording_file'):
                 data['recording_file'] = sip_caller.current_call.recording_file
-            if hasattr(sip_caller.current_call, 'handle_transcription_result'):
+            if hasattr(sip_caller.current_call, 'response_callback'):
                 data['response_callback'] = sip_caller.current_call.response_callback
                 
         return data
@@ -224,7 +224,7 @@ def process_audio_chunk(segment_count, segment_dir, recording_file, current_size
             text = None
             # 使用WhisperTranscriber的方法进行转录
             if sip_caller.current_call and hasattr(sip_caller.current_call, 'transcriber'):
-                text = sip_caller.current_call.transcriber.transcribe_file(processed_file)
+                text = sip_caller.current_call.transcriber.transcribe_file(processed_file, segment_count)
             else:
                 # 直接使用whisper模型进行转录
                 try:

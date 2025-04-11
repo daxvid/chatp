@@ -45,7 +45,7 @@ class WhisperTranscriber:
         """设置Whisper模型"""
         self.whisper_model = model
     
-    def transcribe_file(self, audio_file):
+    def transcribe_file(self, audio_file, segment_count=0):
         """语音识别单个音频文件"""
         try:
             if not self.whisper_model:
@@ -116,32 +116,3 @@ class WhisperTranscriber:
         if self.transcriber_active:
             self.transcriber_active = False
             logger.info("实时语音转录已停止")
-    
-    
-    def transcribe_segment(self, processed_file, segment_count):
-        """转录单个音频段"""
-        if not self.whisper_model:
-            logger.warning("Whisper模型未加载，无法进行语音识别")
-            return None
-            
-        segment_dir = os.path.dirname(processed_file)
-        
-        try:
-            # 使用原始方法直接转录文
-            result = self.whisper_model.transcribe(
-                processed_file,
-                language="zh",
-                fp16=False
-            )
-            text = result.get("text", "").strip()
-            
-            if text:
-                logger.info(f"语音识别结果 (段{segment_count}): {text}")
-                return text
-            else:
-                logger.info(f"语音识别结果为空 (段{segment_count})")
-            
-        except Exception as e:
-            logger.error(f"语音识别失败 (段{segment_count}): {e}")
-        
-        return None 

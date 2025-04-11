@@ -9,6 +9,8 @@ import signal
 import sys
 import pjsua2 as pj  # 确保正确导入
 from threading import Event
+import subprocess
+import shutil
 
 from config_manager import ConfigManager
 from tts_manager import TTSManager
@@ -158,6 +160,28 @@ def main():
             call_duration_timeout = 180  # 最长3分钟通话时间
             last_transcription_count = 0
             
+            # 实时转录相关变量
+            recording_file = None
+            response_callback = None
+            play_response_callback = None
+            last_size = 0
+            last_transcription_time = time.time()
+            min_chunk_size = 8000  # 至少8KB新数据才处理
+            segment_count = 0
+            has_played_response = False
+            max_retries = 3
+            segment_dir = "segments"
+            os.makedirs(segment_dir, exist_ok=True)
+            
+            # 获取当前通话录音文件和回调函数
+            if sip_caller.current_call:
+                if hasattr(sip_caller.current_call, 'recording_file'):
+                    recording_file = sip_caller.current_call.recording_file
+                if hasattr(sip_caller.current_call, 'handle_transcription_result'):
+                    response_callback = sip_caller.current_call.handle_transcription_result
+                if hasattr(sip_caller.current_call, 'play_response_direct'):
+                    play_response_callback = sip_caller.current_call.play_response_direct
+            
             while sip_caller.current_call and sip_caller.current_call.isActive():
                 if exit_event.is_set():
                     logger.info("检测到退出请求，中断当前通话")
@@ -191,6 +215,110 @@ def main():
                             logger.info("通话已断开，继续下一个号码")
                             break
                         
+                        # 实时转录逻辑 - 从原来的_realtime_transcription_loop移植到主循环
+                        if recording_file and os.path.exists(recording_file) and whisper_manager.model:
+                            # 获取当前文件大小
+                            current_size = os.path.getsize(recording_file)
+                            
+                            # 如果文件有显著增长，处理新数据
+                            size_diff = current_size - last_size
+                            if size_diff > min_chunk_size:
+                                segment_count += 1
+                                logger.info(f"检测到录音文件增长: 段{segment_count}, {last_size} -> {current_size} 字节 (+{size_diff}字节)")
+                                
+                                # 确保有足够的间隔让Whisper处理数据
+                                time_since_last = time.time() - last_transcription_time
+                                if time_since_last < 1.0:
+                                    time.sleep(1.0 - time_since_last)
+                                    
+                                # 处理新的音频段
+                                try:
+                                    segment_file = os.path.join(segment_dir, f"segment_{segment_count}.wav")
+                                    
+                                    # 复制整个录音文件
+                                    shutil.copy2(recording_file, segment_file)
+                                    
+                                    # 使用ffmpeg预处理音频，确保格式正确
+                                    processed_file = os.path.join(segment_dir, f"processed_{segment_count}.wav")
+                                    try:
+                                        # 使用ffmpeg规范化音频
+                                        cmd = [
+                                            "ffmpeg", "-y", 
+                                            "-i", segment_file, 
+                                            "-ar", "16000",  # 采样率16kHz
+                                            "-ac", "1",      # 单声道
+                                            "-c:a", "pcm_s16le",  # 16位PCM
+                                            processed_file
+                                        ]
+                                        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                        logger.info(f"音频预处理成功: {processed_file}")
+                                        
+                                        # 检查预处理文件
+                                        if os.path.exists(processed_file) and os.path.getsize(processed_file) > 1000:
+                                            # 转录处理
+                                            text = None
+                                            # 使用WhisperTranscriber的方法进行转录
+                                            if sip_caller.current_call and hasattr(sip_caller.current_call, 'transcriber'):
+                                                text = sip_caller.current_call.transcriber._transcribe_segment(processed_file, segment_count)
+                                            else:
+                                                # 直接使用whisper模型进行转录
+                                                try:
+                                                    result = whisper_manager.model.transcribe(
+                                                        processed_file,
+                                                        language="zh",
+                                                        fp16=False
+                                                    )
+                                                    text = result.get("text", "").strip()
+                                                    if text:
+                                                        logger.info(f"语音识别结果 (段{segment_count}): {text}")
+                                                except Exception as e:
+                                                    logger.error(f"转录尝试失败: {e}")
+                                            
+                                            # 如果成功识别到文本，调用回调
+                                            if text and not has_played_response:
+                                                logger.info(f"检测到语音，准备响应")
+                                                
+                                                # 如果提供了转录结果回调函数，调用它
+                                                if response_callback:
+                                                    response_callback(text)
+                                                
+                                                # 添加到转录结果列表
+                                                if sip_caller.current_call and hasattr(sip_caller.current_call, 'add_transcription_result'):
+                                                    sip_caller.current_call.add_transcription_result(text)
+                                                
+                                                # 显示实时转录结果
+                                                print("\n" + "="*20 + " 实时转录 " + "="*20)
+                                                print(f"时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+                                                print(f"内容: {text}")
+                                                print("="*50 + "\n")
+                                                
+                                                # 如果提供了播放响应回调函数，调用它
+                                                if play_response_callback:
+                                                    play_response_callback()
+                                                    has_played_response = True
+                                        else:
+                                            logger.warning(f"预处理后的音频文件过小或不存在: {processed_file}")
+                                    except Exception as e:
+                                        logger.error(f"音频预处理失败: {e}")
+                                        logger.error(f"详细错误: {traceback.format_exc()}")
+                                    
+                                    # 更新上次处理的位置和时间
+                                    last_size = current_size
+                                    last_transcription_time = time.time()
+                                    
+                                    # 清理临时文件
+                                    try:
+                                        if os.path.exists(segment_file):
+                                            os.remove(segment_file)
+                                        if os.path.exists(processed_file):
+                                            os.remove(processed_file)
+                                    except Exception as e:
+                                        logger.warning(f"无法删除临时文件: {e}")
+                                        
+                                except Exception as e:
+                                    logger.error(f"处理音频段 {segment_count} 时出错: {e}")
+                                    logger.error(f"详细错误: {traceback.format_exc()}")
+                        
                         # 显示实时转录结果
                         if hasattr(sip_caller.current_call, 'get_transcription_results'):
                             try:
@@ -212,7 +340,7 @@ def main():
                 except Exception as e:
                     logger.debug(f"获取通话状态时出错: {e}")
                 
-                time.sleep(1)
+                time.sleep(0.5)
             
             # 确保通话已结束
             if sip_caller.current_call and sip_caller.current_call.isActive():

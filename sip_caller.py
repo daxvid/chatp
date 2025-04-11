@@ -318,7 +318,7 @@ class SIPCall(pj.Call):
             return False
     
     def start_realtime_transcription_thread(self):
-        """启动实时转录线程"""
+        """准备实时转录（不再启动线程，由main.py主循环处理）"""
         try:
             # 如果录音文件存在且Whisper模型已加载
             if self.recording_file and self.whisper_model:
@@ -326,19 +326,19 @@ class SIPCall(pj.Call):
                 if not self.transcriber:
                     self.transcriber = WhisperTranscriber(self.whisper_model)
                 
-                # 启动实时转录，并设置回调函数
+                # 设置实时转录参数，不再启动线程
                 self.transcriber.start_realtime_transcription(
                     self.recording_file,
                     response_callback=self.handle_transcription_result,
                     play_response_callback=self.play_response_direct
                 )
-                logger.info("实时转录线程已启动")
+                logger.info("实时转录参数已准备，将由main.py主循环处理")
                 return True
             else:
-                logger.error("无法启动转录：录音文件或Whisper模型未准备好")
+                logger.error("无法准备转录：录音文件或Whisper模型未准备好")
                 return False
         except Exception as e:
-            logger.error(f"启动实时转录线程失败: {e}")
+            logger.error(f"准备实时转录失败: {e}")
             return False
 
     def handle_transcription_result(self, text):
@@ -574,6 +574,40 @@ class SIPCall(pj.Call):
             logger.error(f"播放响应过程中出错: {e}")
             import traceback
             logger.error(f"详细错误: {traceback.format_exc()}")
+            return False
+
+    def get_transcription_results(self):
+        """获取转录结果，供main.py循环调用"""
+        try:
+            if hasattr(self, 'transcription_results') and self.transcription_results:
+                return self.transcription_results
+            else:
+                # 如果尚未初始化，创建一个空列表
+                self.transcription_results = []
+                return self.transcription_results
+        except Exception as e:
+            logger.error(f"获取转录结果失败: {e}")
+            return []
+            
+    def add_transcription_result(self, text):
+        """添加新的转录结果"""
+        try:
+            if not hasattr(self, 'transcription_results'):
+                self.transcription_results = []
+                
+            # 添加带时间戳的结果
+            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+            self.transcription_results.append({
+                'timestamp': timestamp,
+                'text': text
+            })
+            
+            # 同时调用原有的处理回调
+            self.handle_transcription_result(text)
+            
+            return True
+        except Exception as e:
+            logger.error(f"添加转录结果失败: {e}")
             return False
 
 class SIPCaller:

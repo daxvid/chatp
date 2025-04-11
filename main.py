@@ -228,7 +228,7 @@ def process_audio_chunk(segment_count, segment_dir, recording_file, current_size
             text = None
             # 使用WhisperTranscriber的方法进行转录
             if sip_caller.current_call and hasattr(sip_caller.current_call, 'transcriber'):
-                text = sip_caller.current_call.transcriber._transcribe_segment(processed_file, segment_count)
+                text = sip_caller.current_call.transcriber.transcribe_segment(processed_file, segment_count)
             else:
                 # 直接使用whisper模型进行转录
                 try:

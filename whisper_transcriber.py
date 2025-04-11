@@ -93,48 +93,7 @@ class WhisperTranscriber:
                                 logger.warning(f"可用键: {result.keys()}")
                             return str(result) if result else None
                     except Exception as e:
-                        logger.error(f"Whisper处理失败: {e}")
-                        logger.error(f"详细错误: {traceback.format_exc()}")
-                        
-                        # 尝试降级处理
-                        if HAVE_SOUNDFILE and HAVE_NUMPY:
-                            try:
-                                # 加载音频文件
-                                logger.info(f"尝试使用降级方法处理录音文件: {temp_file}")
-                                audio, sr = sf.read(temp_file)
-                                
-                                # 如果是双声道，转换为单声道
-                                if len(audio.shape) > 1 and audio.shape[1] > 1:
-                                    audio = np.mean(audio, axis=1)
-                                
-                                # 如果采样率不是16kHz，进行重采样
-                                if sr != 16000 and HAVE_SCIPY:
-                                    target_len = int(len(audio) * 16000 / sr)
-                                    audio = signal.resample(audio, target_len)
-                                    sr = 16000
-                                
-                                # 直接使用模型处理音频数据
-                                result = self.whisper_model.transcribe(
-                                    audio,
-                                    sampling_rate=sr,
-                                    language="zh",
-                                    task="transcribe",
-                                    verbose=False
-                                )
-                                
-                                if isinstance(result, dict) and 'text' in result:
-                                    logger.info(f"降级方法语音识别结果: {result['text']}")
-                                    return result['text']
-                                else:
-                                    logger.warning(f"降级方法语音识别结果格式异常: {type(result)}")
-                                    return None
-                            except Exception as e2:
-                                logger.error(f"降级处理也失败: {e2}")
-                                logger.error(f"详细错误: {traceback.format_exc()}")
-                                return None
-                        else:
-                            logger.error("无法使用降级处理，缺少必要的库")
-                            return None
+                        logger.warning(f"Whisper处理失败:{temp_file} {e}")
                 except Exception as e:
                     logger.error(f"语音识别处理失败: {e}")
                     logger.error(f"详细错误: {traceback.format_exc()}")

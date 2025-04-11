@@ -81,6 +81,8 @@ class CallManager:
             
             # 初始化结果
             result = {
+                'start_time': start_time,
+                'end_time': start_time,
                 'phone_number': phone_number,
                 'call_time': start_time.strftime('%Y-%m-%d %H:%M:%S'),
                 'status': '接通' if call_result else '未接通',

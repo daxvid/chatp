@@ -47,29 +47,42 @@ class WhisperTranscriber:
         self.whisper_model = model
     
     def transcribe_file(self, audio_file):
-        """转录单个音频文件"""
+        """语音识别单个音频文件"""
         try:
             if not self.whisper_model:
                 logger.error("Whisper模型未加载，无法进行语音识别")
                 return None
                 
             if audio_file and os.path.exists(audio_file):
-                logger.info(f"开始转录音频: {audio_file}")
                 # 检查文件大小，确保不是空文件
                 if os.path.getsize(audio_file) < 1000:  # 小于1KB的文件可能有问题
                     logger.warning(f"录音文件过小，可能没有录到声音: {audio_file}")
                     return None
-                
+
+                logger.info(f"开始语音识别: {audio_file}")
                 try:
-                    # 确保处理前没有其他程序占用文件
-                    temp_file = audio_file + ".temp"
-                    if os.path.exists(temp_file):
-                        os.remove(temp_file)
-                    
-                    # 复制一份文件进行处理，避免文件锁定问题
-                    shutil.copy2(audio_file, temp_file)
-                    
+                    # 使用原始文件直接转录文
+                    result = self.whisper_model.transcribe(
+                        audio_file,
+                        language="zh",
+                        fp16=False
+                    )
+                    text = result.get("text", "").strip()
+                    if text:
+                        logger.info(f"语音识别结果: {text}")
+                        return text
+                    else:
+                        logger.info(f"语音识别结果为空")
+                        return None
+                except Exception as e:
+                    logger.warning(f"语音识别失败:{audio_file} {e}")
                     try:
+                        # 确保处理前没有其他程序占用文件
+                        temp_file = audio_file + ".temp"
+                        if os.path.exists(temp_file):
+                            os.remove(temp_file)
+                        # 复制一份文件进行处理，避免文件锁定问题
+                        shutil.copy2(audio_file, temp_file)
                         # 使用原始方法直接转录文
                         result = self.whisper_model.transcribe(
                             temp_file,
@@ -83,23 +96,24 @@ class WhisperTranscriber:
                             pass
                             
                         text = result.get("text", "").strip()
-                        return text
+                        if text:
+                            logger.info(f"语音识别结果: {text}")
+                            return text
+                        else:
+                            logger.info(f"语音识别结果为空")
+                            return None
                     except Exception as e:
-                        logger.warning(f"Whisper处理失败:{temp_file} {e}")
-                except Exception as e:
-                    logger.error(f"语音识别处理失败: {e}")
-                    logger.error(f"详细错误: {traceback.format_exc()}")
-                    return None
+                        logger.error(f"语音识别失败::{audio_file} {e}")
+                        logger.error(f"详细错误: {traceback.format_exc()}")
             else:
                 logger.warning(f"录音文件不存在: {audio_file}")
-            return None
         except Exception as e:
             logger.error(f"语音识别失败: {e}")
             logger.error(f"详细错误: {traceback.format_exc()}")
-            return None
+        return None
 
     def stop_transcription(self):
-        """停止实时转录"""
+        """停止实时语音识别"""
         if self.transcriber_active:
             self.transcriber_active = False
             logger.info("实时语音转录已停止")

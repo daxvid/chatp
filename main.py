@@ -208,19 +208,19 @@ def process_audio_chunk(segment_count, segment_dir, recording_file, current_size
         shutil.copy2(recording_file, segment_file)
         
         # 使用ffmpeg预处理音频，确保格式正确
-        processed_file = os.path.join(segment_dir, f"processed_{segment_count}.wav")
+        processed_file = segment_file #os.path.join(segment_dir, f"processed_{segment_count}.wav")
         
         # 使用ffmpeg规范化音频
-        cmd = [
-            "ffmpeg", "-y", 
-            "-i", segment_file, 
-            "-ar", "16000",  # 采样率16kHz
-            "-ac", "1",      # 单声道
-            "-c:a", "pcm_s16le",  # 16位PCM
-            processed_file
-        ]
-        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        logger.info(f"音频预处理成功: {processed_file}")
+        #cmd = [
+        #    "ffmpeg", "-y", 
+        #    "-i", segment_file, 
+        #    "-ar", "16000",  # 采样率16kHz
+        #    "-ac", "1",      # 单声道
+        #    "-c:a", "pcm_s16le",  # 16位PCM
+        #    processed_file
+        #]
+        #subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        #logger.info(f"音频预处理成功: {processed_file}")
         
         # 检查预处理文件
         if os.path.exists(processed_file) and os.path.getsize(processed_file) > 1000:
@@ -228,7 +228,7 @@ def process_audio_chunk(segment_count, segment_dir, recording_file, current_size
             text = None
             # 使用WhisperTranscriber的方法进行转录
             if sip_caller.current_call and hasattr(sip_caller.current_call, 'transcriber'):
-                text = sip_caller.current_call.transcriber.transcribe_segment(processed_file, segment_count)
+                text = sip_caller.current_call.transcriber.transcribe_file(processed_file)
             else:
                 # 直接使用whisper模型进行转录
                 try:

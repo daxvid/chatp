@@ -49,11 +49,9 @@ logger = logging.getLogger("sip")
 
 class SIPCall(pj.Call):
     """SIP通话类，继承自pjsua2.Call"""
-    def __init__(self, acc, voice_file=None, whisper_model=None, phone_number=None, response_voice_file=None):
+    def __init__(self, acc, voice_file=None, whisper_model=None, phone_number=None):
         pj.Call.__init__(self, acc)
         self.voice_file = voice_file
-        self.response_voice_file = response_voice_file
-        self.voice_data = None
         self.recorder = None
         self.recording_file = None
         self.whisper_model = whisper_model
@@ -67,71 +65,13 @@ class SIPCall(pj.Call):
         self.ep = None
         self.audio_recorder = None
         self.transcriber = None
-        
-        if self.voice_file:
-            self._load_voice_file()
-        if self.response_voice_file:
-            self._load_response_file()
 
         # 获取全局Endpoint实例，提前准备好
         try:
             self.ep = pj.Endpoint.instance()
         except Exception as e:
             logger.error(f"获取Endpoint实例失败: {e}")
-
-    def _load_voice_file(self):
-        """加载语音文件"""
-        try:    
-            with wave.open(self.voice_file, 'rb') as wf:
-                if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getframerate() != 8000:
-                    logger.warning("语音文件不是单声道、16位、8kHz采样率，尝试转换...")
-                    self._convert_to_compatible_wav()
-                self.voice_data = wf.readframes(wf.getnframes())
-                logger.info(f"语音文件加载成功: {self.voice_file}")
-        except Exception as e:
-            logger.error(f"加载语音文件失败: {e}")
-            self.voice_data = None
             
-            
-    def _convert_to_compatible_wav(self):
-        """转换WAV文件为PJSIP兼容格式（单声道、16位、8kHz采样率）"""
-        try:
-            import subprocess
-            temp_file = self.voice_file + '.temp.wav'
-            
-            # 使用ffmpeg转换
-            cmd = [
-                'ffmpeg', '-y', 
-                '-i', self.voice_file, 
-                '-acodec', 'pcm_s16le', 
-                '-ar', '8000', 
-                '-ac', '1', 
-                temp_file
-            ]
-            
-            logger.info(f"转换WAV为兼容格式: {' '.join(cmd)}")
-            subprocess.run(cmd, check=True)
-            
-            # 替换原始文件
-            import os
-            os.rename(temp_file, self.voice_file)
-            logger.info(f"WAV文件已转换为兼容格式: {self.voice_file}")
-            
-        except Exception as e:
-            logger.error(f"WAV格式转换失败: {e}")
-            raise
-
-    def _load_response_file(self):
-        """加载响应语音文件"""
-        try:    
-            with wave.open(self.response_voice_file, 'rb') as wf:
-                if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getframerate() != 8000:
-                    logger.warning("响应语音文件不是单声道、16位、8kHz采样率，尝试转换...")
-                    self._convert_to_compatible_wav(self.response_voice_file)
-                logger.info(f"响应语音文件加载成功: {self.response_voice_file}")
-        except Exception as e:
-            logger.error(f"加载响应语音文件失败: {e}")
-
     def start_recording(self, phone_number):
         """开始录音"""
         try:
@@ -205,23 +145,6 @@ class SIPCall(pj.Call):
                 if hasattr(self, 'should_play_response') and self.should_play_response:
                     self.should_play_response = False  # 重置标志
                     
-                    # 如果有响应语音文件，播放它
-                    if self.response_voice_file and os.path.exists(self.response_voice_file):
-                        try:
-                            logger.info(f"播放响应语音: {self.response_voice_file}")
-                            
-                            # 创建音频播放器
-                            player = pj.AudioMediaPlayer()
-                            player.createPlayer(self.response_voice_file)
-                            
-                            # 播放到音频媒体
-                            player.startTransmit(self.audio_media)
-                            logger.info("响应语音播放已开始")
-                        except Exception as e:
-                            logger.error(f"播放响应语音失败: {e}")
-                            import traceback
-                            logger.error(f"详细错误: {traceback.format_exc()}")
-                
                 # 处理录音 - 检查是否已经有录音器但尚未连接到音频媒体
                 if self.recorder and not self.audio_recorder:
                     try:
@@ -293,52 +216,7 @@ class SIPCall(pj.Call):
             logger.error(f"详细错误: {traceback.format_exc()}")
             return None
             
-    def play_response_after_speech(self):
-        """在对方说完话后播放响应语音"""
-        if self.has_played_response:
-            logger.info("已经播放过响应，不再重复播放")
-            return
-            
-        try:
-            logger.info("准备播放响应语音")
-            # 等待一小段时间，确保对方说完
-            time.sleep(0.5)
-            
-            if not self.response_voice_file or not os.path.exists(self.response_voice_file):
-                logger.warning(f"响应语音文件不存在或未指定: {self.response_voice_file}")
-                return
-                
-            # 创建音频播放器
-            player = pj.AudioMediaPlayer()
-            logger.info(f"尝试播放响应语音文件: {self.response_voice_file}")
-            
-            # 加载并检查语音文件
-            try:
-                player.createPlayer(self.response_voice_file)
-                logger.info("响应语音播放器已创建")
-            except Exception as e:
-                logger.error(f"创建响应播放器失败: {e}")
-                return
-                
-            # 获取通话媒体
-            try:
-                audio_stream = self.getAudioMedia(-1)
-                logger.info("成功获取音频媒体")
-            except Exception as e:
-                logger.error(f"获取音频媒体失败: {e}")
-                logger.error("响应语音播放功能不可用")
-                return
-            
-            # 开始传输音频
-            player.startTransmit(audio_stream)
-            logger.info("开始播放响应语音，音频传输已启动")
-            self.has_played_response = True
-            
-        except Exception as e:
-            logger.error(f"播放响应语音过程中出错: {e}")
-            import traceback
-            logger.error(f"详细错误: {traceback.format_exc()}")
-    
+
     def onCallState(self, prm):
         """呼叫状态改变时的回调函数"""
         try:
@@ -411,11 +289,11 @@ class SIPCall(pj.Call):
     def play_response_direct(self):
         """直接播放响应音频到通话对方"""
         try:
-            if not self.response_voice_file or not os.path.exists(self.response_voice_file):
-                logger.error(f"响应语音文件不存在: {self.response_voice_file}")
+            if not self.voice_file or not os.path.exists(self.voice_file):
+                logger.error(f"响应语音文件不存在: {self.voice_file}")
                 return False
                 
-            logger.info(f"准备播放响应音频到通话对方: {self.response_voice_file}")
+            logger.info(f"准备播放响应音频到通话对方: {self.voice_file}")
             
             # 设置标志，通知onCallMediaState在媒体状态改变时播放
             self.should_play_response = True
@@ -428,7 +306,7 @@ class SIPCall(pj.Call):
                 if audio_media:
                     # 创建音频播放器
                     player = pj.AudioMediaPlayer()
-                    player.createPlayer(self.response_voice_file)
+                    player.createPlayer(self.voice_file)
                     
                     # 播放到通话媒体
                     player.startTransmit(audio_media)
@@ -554,8 +432,8 @@ class SIPCaller:
             logger.error(f"初始化PJSIP失败: {e}")
             raise
 
-    def make_call(self, number, voice_file=None, response_voice_file=None):
-        """拨打电话并播放语音"""
+    def make_call(self, number, voice_file=None):
+        """拨打电话"""
         try:
             if self.current_call:
                 logger.warning("已有通话在进行中")
@@ -570,33 +448,9 @@ class SIPCaller:
             sip_uri = f"sip:{self.phone_number}@{self.config.get('server', '')}:{self.config.get('port', '')}"
             logger.info(f"SIP URI: {sip_uri}")
             logger.info(f"SIP账户: {self.config.get('username', '')}@{self.config.get('server', '')}:{self.config.get('port', '')}")
-            
-            # 如果未指定语音文件，但config中提供了语音文件路径，则使用它
-            if not voice_file and 'voice_file' in self.config:
-                voice_file = self.config['voice_file']
-                logger.info(f"使用配置中的语音文件: {voice_file}")
-                
-            # 如果未指定响应语音文件，且config中有tts_text，则生成语音文件
-            if not response_voice_file and 'tts_text' in self.config:                
-                try:
-                    # 使用TTS管理器生成语音
-                    tts_text = self.config['tts_text']
-                    # 使用TTS管理器生成语音
-                    tts_voice = self.config.get('tts_voice', 'zh-CN-XiaoxiaoNeural')
-                    response_voice_file = self.tts_manager.generate_tts_sync(tts_text, tts_voice)
-                except Exception as e:
-                    logger.error(f"TTS语音生成失败: {e}")
-                    import traceback
-                    logger.error(f"详细错误: {traceback.format_exc()}")
-                    
-            # 记录语音文件信息
-            if voice_file:
-                logger.info(f"语音文件: {voice_file}")
-            if response_voice_file:
-                logger.info(f"响应语音文件: {response_voice_file}")
-            
+
             # 创建通话对象，并传入电话号码和响应语音文件
-            call = SIPCall(self.acc, voice_file, self.whisper_model, number, response_voice_file)
+            call = SIPCall(self.acc, voice_file, self.whisper_model, number)
             # 传递tts_manager和response_configs到通话对象
             call.tts_manager = self.tts_manager
             call.response_configs = self.response_configs

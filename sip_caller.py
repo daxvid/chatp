@@ -264,29 +264,6 @@ class SIPCall(pj.Call):
             logger.error(f"停止录音失败: {e}")
             return False
     
-    def start_realtime_transcription_thread(self):
-        """准备实时转录（不再启动线程，由main.py主循环处理）"""
-        try:
-            # 如果录音文件存在且Whisper模型已加载
-            if self.recording_file and self.whisper_model:
-                # 创建WhisperTranscriber实例
-                if not self.transcriber:
-                    self.transcriber = WhisperTranscriber(self.whisper_model)
-                
-                # 设置实时转录参数，不再启动线程
-                self.transcriber.start_realtime_transcription(
-                    self.recording_file,
-                    response_callback=self.handle_transcription_result,
-                    play_response_callback=self.play_response_direct
-                )
-                logger.info("实时转录参数已准备，将由main.py主循环处理")
-                return True
-            else:
-                logger.error("无法准备转录：录音文件或Whisper模型未准备好")
-                return False
-        except Exception as e:
-            logger.error(f"准备实时转录失败: {e}")
-            return False
 
     def handle_transcription_result(self, text):
         """处理转录结果的回调函数"""
@@ -395,15 +372,6 @@ class SIPCall(pj.Call):
                 if self.phone_number:
                     # 启动录音
                     self.start_recording(self.phone_number)
-                    
-                    # 在录音启动后，直接开始实时转录
-                    if self.whisper_model and self.recording_file:
-                        logger.info("初始化实时语音转录...")
-                        # 启动transcriber_thread
-                        self.start_realtime_transcription_thread()
-                        
-                        # 启动响应检查线程
-                        self.start_response_check_thread()
                 
             elif ci.state == pj.PJSIP_INV_STATE_DISCONNECTED:
                 logger.info(f"通话已结束: 状态码={ci.lastStatusCode}, 原因={ci.lastReason}")
@@ -438,48 +406,7 @@ class SIPCall(pj.Call):
             logger.error(f"处理呼叫状态变化时出错: {e}")
             import traceback
             logger.error(f"详细错误: {traceback.format_exc()}")
-
-    def start_response_check_thread(self):
-        """启动响应检查线程"""
-        try:
-            self.response_check_active = True
-            self.response_check_thread = threading.Thread(
-                target=self._response_check_loop,
-                daemon=True
-            )
-            self.response_check_thread.start()
-            logger.info("响应检查线程已启动")
-            return True
-        except Exception as e:
-            logger.error(f"启动响应检查线程失败: {e}")
-            return False
-            
-    def _response_check_loop(self):
-        """响应检查循环"""
-        try:
-            check_count = 0
-            max_checks = 60  # 30秒
-            
-            while self.response_check_active and check_count < max_checks:
-                check_count += 1
-                
-                # 简单的标志检查
-                if hasattr(self, 'should_play_response') and self.should_play_response:
-                    logger.info("检测到should_play_response标志，标记为下一次媒体状态变化时播放")
-                    # 将标志保持为True，等待下一次媒体状态变化时播放
-                    time.sleep(0.5)
-                    continue
-                
-                time.sleep(0.5)
-                
-            logger.info("响应检查线程结束")
-            
-        except Exception as e:
-            logger.error(f"响应检查线程出错: {e}")
-            import traceback
-            logger.error(f"详细错误: {traceback.format_exc()}")
-        
-        self.response_check_active = False
+         
 
     def play_response_direct(self):
         """直接播放响应音频到通话对方"""

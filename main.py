@@ -81,12 +81,6 @@ def main():
         # 验证tel.txt文件存在
         if not os.path.exists(call_list_file):
             logger.error(f"电话号码列表文件不存在: {call_list_file}")
-            logger.info("创建一个示例tel.txt文件...")
-            with open(call_list_file, 'w', encoding='utf-8') as f:
-                f.write("10086\n")  # 添加一个示例号码
-                f.write("10000\n")
-                f.write(sip_config.get('target_number', '10010'))
-            logger.info(f"已创建示例文件 {call_list_file}，请编辑后重新运行程序")
             return
             
         # 初始化TTS引擎
@@ -112,7 +106,6 @@ def main():
             logger.error("SIP客户端初始化不完整，无法进行呼叫")
             return
 
-
         # 初始化呼叫管理器
         logger.info("初始化呼叫管理器...")
         call_manager = CallManager(sip_caller, tts_manager, whisper_manager)
@@ -136,12 +129,9 @@ def main():
         logger.info(f"生成语音: '{text[:30]}...'")
         wav_file = self.tts_manager.generate_tts_sync( tts_config['text'],  tts_config['voice'])
         if not wav_file:
-            logger.error("TTS生成失败，无法拨打电话")
+            logger.error("TTS语音生成失败，无法拨打电话")
             return
         logger.info(f"语音文件生成成功: {wav_file}")
-            
-        # 开始处理呼叫，同时检查退出事件
-        logger.info(f"开始处理呼叫，TTS文本: {tts_config['text'][:30]}...")
         
         # 自定义处理，逐个号码处理，支持中断
         call_list = call_manager.call_list
@@ -156,7 +146,7 @@ def main():
             logger.info(f"正在处理第 {i+1}/{len(call_list)} 个号码: {phone_number}")
             
             # 拨打电话
-            result = call_manager.make_call_with_tts(phone_number, wav_fil)
+            result = call_manager.make_call_with_tts(phone_number, wav_file)
             
             # 等待通话完成
             logger.info("等待通话完成...")

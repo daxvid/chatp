@@ -107,14 +107,12 @@ class SIPCall(pj.Call):
             filename = f"{clean_number}_{timestamp}.wav"
             self.recording_file = os.path.join(recordings_dir, filename)
             
-            logger.info(f"创建录音文件: {self.recording_file}")
-            
             # 直接创建录音器，但尝试获取媒体录音需要放在onCallMediaState
             try:
                 # 创建录音器实例
                 self.recorder = pj.AudioMediaRecorder()
                 self.recorder.createRecorder(self.recording_file)
-                logger.info(f"录音设备创建成功: {self.recording_file}")
+                logger.info(f"录音创建成功: {self.recording_file}")
                 
                 # 获取当前音频媒体 - 尝试在这里就连接，如果成功最好
                 try:

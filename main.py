@@ -64,7 +64,7 @@ def load_configuration():
         call_list_file = config_manager.get_call_list_file()
         call_log_file = config_manager.get_call_log_file()
         
-        logger.info(f"SIP配置: {sip_config}")
+        #logger.info(f"SIP配置: {sip_config}")
         logger.info(f"呼叫列表文件: {call_list_file}")
         logger.info(f"呼叫日志文件: {call_log_file}")
         
@@ -135,7 +135,6 @@ def generate_tts_voice(call_manager, tts_config):
         if not wav_file:
             logger.error("TTS语音生成失败，无法拨打电话")
             return None
-        logger.info(f"语音文件生成成功: {wav_file}")
         return wav_file
     except Exception as e:
         logger.error(f"生成TTS语音失败: {e}")

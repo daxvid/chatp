@@ -581,8 +581,6 @@ class SIPCaller:
                 try:
                     # 使用TTS管理器生成语音
                     tts_text = self.config['tts_text']
-                    logger.info(f"从config.yaml中的tts_text生成语音文件: {tts_text}")
-                    
                     # 使用TTS管理器生成语音
                     tts_voice = self.config.get('tts_voice', 'zh-CN-XiaoxiaoNeural')
                     response_voice_file = self.tts_manager.generate_tts_sync(tts_text, tts_voice)

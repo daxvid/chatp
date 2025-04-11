@@ -40,7 +40,6 @@ class WhisperTranscriber:
         self.transcriber_thread = None
         self.recording_file = None
         self.response_callback = None
-        self.play_response_callback = None
     
     def set_model(self, model):
         """设置Whisper模型"""

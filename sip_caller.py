@@ -57,7 +57,6 @@ class SIPCall(pj.Call):
         self.whisper_model = whisper_model
         self.phone_number = phone_number
         self.audio_port = None
-        self.has_played_response = False
         self.should_play_response = False
         self.tts_manager = None
         self.response_configs = None
@@ -188,7 +187,7 @@ class SIPCall(pj.Call):
             return False
     
 
-    def handle_transcription_result(self, text):
+    def response_callback(self, text):
         """处理转录结果的回调函数"""
         if text:
             logger.info(f"收到转录结果: {text}")
@@ -311,7 +310,7 @@ class SIPCall(pj.Call):
                     # 播放到通话媒体
                     player.startTransmit(audio_media)
                     logger.info("响应语音已开始播放到通话对方")
-                    self.has_played_response = True
+                    
                     return True
                 else:
                     logger.warning("无法获取音频媒体，将在下一次媒体状态变化时尝试播放")
@@ -339,27 +338,6 @@ class SIPCall(pj.Call):
         except Exception as e:
             logger.error(f"获取转录结果失败: {e}")
             return []
-            
-    def add_transcription_result(self, text):
-        """添加新的转录结果"""
-        try:
-            if not hasattr(self, 'transcription_results'):
-                self.transcription_results = []
-                
-            # 添加带时间戳的结果
-            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-            self.transcription_results.append({
-                'timestamp': timestamp,
-                'text': text
-            })
-            
-            # 同时调用原有的处理回调
-            self.handle_transcription_result(text)
-            
-            return True
-        except Exception as e:
-            logger.error(f"添加转录结果失败: {e}")
-            return False
 
 class SIPCaller:
     """SIP呼叫管理类"""

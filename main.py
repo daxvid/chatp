@@ -178,16 +178,13 @@ def get_call_metadata(sip_caller):
         data = {
             'recording_file': None,
             'response_callback': None,
-            'play_response_callback': None
         }
         
         if sip_caller.current_call:
             if hasattr(sip_caller.current_call, 'recording_file'):
                 data['recording_file'] = sip_caller.current_call.recording_file
             if hasattr(sip_caller.current_call, 'handle_transcription_result'):
-                data['response_callback'] = sip_caller.current_call.handle_transcription_result
-            if hasattr(sip_caller.current_call, 'play_response_direct'):
-                data['play_response_callback'] = sip_caller.current_call.play_response_direct
+                data['response_callback'] = sip_caller.current_call.response_callback
                 
         return data
     except Exception as e:
@@ -195,11 +192,10 @@ def get_call_metadata(sip_caller):
         logger.error(f"详细错误: {traceback.format_exc()}")
         return {
             'recording_file': None,
-            'response_callback': None,
-            'play_response_callback': None
+            'response_callback': None
         }
 
-def process_audio_chunk(segment_count, segment_dir, recording_file, current_size, whisper_manager, sip_caller, response_callback, play_response_callback, has_played_response):
+def process_audio_chunk(segment_count, segment_dir, recording_file, current_size, whisper_manager, sip_caller, response_callback):
     """处理录音文件的新增数据块"""
     try:
         segment_file = os.path.join(segment_dir, f"segment_{segment_count}.wav")
@@ -244,27 +240,10 @@ def process_audio_chunk(segment_count, segment_dir, recording_file, current_size
                     logger.error(f"转录尝试失败: {e}")
             
             # 如果成功识别到文本，调用回调
-            if text and not has_played_response:
-                logger.info(f"检测到语音，准备响应")
-                
+            if text:
                 # 如果提供了转录结果回调函数，调用它
                 if response_callback:
                     response_callback(text)
-                
-                # 添加到转录结果列表
-                if sip_caller.current_call and hasattr(sip_caller.current_call, 'add_transcription_result'):
-                    sip_caller.current_call.add_transcription_result(text)
-                
-                # 显示实时转录结果
-                print("\n" + "="*20 + " 实时转录 " + "="*20)
-                print(f"时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-                print(f"内容: {text}")
-                print("="*50 + "\n")
-                
-                # 如果提供了播放响应回调函数，调用它
-                if play_response_callback:
-                    play_response_callback()
-                    has_played_response = True
         else:
             logger.warning(f"预处理后的音频文件过小或不存在: {processed_file}")
     
@@ -277,11 +256,11 @@ def process_audio_chunk(segment_count, segment_dir, recording_file, current_size
         except Exception as e:
             logger.warning(f"无法删除临时文件: {e}")
             
-        return has_played_response, current_size
+        return current_size
     except Exception as e:
         logger.error(f"处理音频块失败: {e}")
         logger.error(f"详细错误: {traceback.format_exc()}")
-        return has_played_response, None
+        return None
 
 def update_transcription_display(sip_caller, last_count):
     """更新转录结果显示"""
@@ -350,13 +329,11 @@ def wait_for_call_completion(call_manager, whisper_manager, timeout=180):
     call_metadata = get_call_metadata(sip_caller)
     recording_file = call_metadata['recording_file']
     response_callback = call_metadata['response_callback']
-    play_response_callback = call_metadata['play_response_callback']
     
     last_size = 0
     last_transcription_time = time.time()
     min_chunk_size = 8000  # 至少8KB新数据才处理
     segment_count = 0
-    has_played_response = False
     
     while sip_caller.current_call and sip_caller.current_call.isActive():
         # 检查退出请求
@@ -392,9 +369,9 @@ def wait_for_call_completion(call_manager, whisper_manager, timeout=180):
                     time.sleep(1.0 - time_since_last)
                     
                 # 处理新的音频段
-                has_played_response, new_size = process_audio_chunk(
+                new_size = process_audio_chunk(
                     segment_count, segment_dir, recording_file, current_size,
-                    whisper_manager, sip_caller, response_callback, play_response_callback, has_played_response
+                    whisper_manager, sip_caller, response_callback
                 )
                 
                 # 更新时间和大小

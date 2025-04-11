@@ -275,20 +275,6 @@ class SIPCall(pj.Call):
                         import traceback
                         logger.error(f"详细错误: {traceback.format_exc()}")
                 
-                # 如果有语音文件需要播放
-                if self.voice_file and os.path.exists(self.voice_file):
-                    try:
-                        # 创建播放器
-                        player = pj.AudioMediaPlayer()
-                        player.createPlayer(self.voice_file)
-                        
-                        # 开始传输到呼叫的音频媒体
-                        player.startTransmit(self.audio_media)
-                        logger.info(f"开始播放语音文件: {self.voice_file}")
-                    except Exception as e:
-                        logger.error(f"播放语音文件失败: {e}")
-                        import traceback
-                        logger.error(f"详细错误: {traceback.format_exc()}")
             except Exception as e:
                 logger.error(f"处理音频媒体时出错: {e}")
                 import traceback
@@ -535,40 +521,39 @@ class SIPCall(pj.Call):
         self.response_check_active = False
 
     def play_response_direct(self):
-        """直接播放响应文件 - 这个方法是在转录线程中调用的，但使用子进程播放"""
+        """直接播放响应音频到通话对方"""
         try:
             if not self.response_voice_file or not os.path.exists(self.response_voice_file):
                 logger.error(f"响应语音文件不存在: {self.response_voice_file}")
                 return False
                 
-            # 使用ffplay直接播放音频文件，不通过PJSIP
-            logger.info(f"使用直接播放方式播放响应: {self.response_voice_file}")
+            logger.info(f"准备播放响应音频到通话对方: {self.response_voice_file}")
             
-            # 由于我们可能无法直接通过PJSIP播放，尝试一种备用方案：
-            # 1. 首先使用标志通知主线程
+            # 设置标志，通知onCallMediaState在媒体状态改变时播放
             self.should_play_response = True
             
-            # 2. 然后使用子进程直接播放音频文件到系统默认输出设备
+            # 尝试立即播放，如果可能的话
             try:
-                import subprocess
+                # 获取通话媒体
+                audio_media = self.getAudioMedia(-1)
                 
-                # 使用ffplay播放音频
-                cmd = [
-                    "ffplay",
-                    "-nodisp",  # 不显示窗口
-                    "-autoexit",  # 播放完自动退出
-                    "-loglevel", "quiet",  # 减少日志输出
-                    self.response_voice_file
-                ]
-                
-                logger.info(f"执行命令: {' '.join(cmd)}")
-                subprocess.Popen(cmd, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
-                logger.info("响应文件正在系统默认输出设备上播放")
-                
-                return True
+                if audio_media:
+                    # 创建音频播放器
+                    player = pj.AudioMediaPlayer()
+                    player.createPlayer(self.response_voice_file)
+                    
+                    # 播放到通话媒体
+                    player.startTransmit(audio_media)
+                    logger.info("响应语音已开始播放到通话对方")
+                    self.has_played_response = True
+                    return True
+                else:
+                    logger.warning("无法获取音频媒体，将在下一次媒体状态变化时尝试播放")
+                    return False
             except Exception as e:
-                logger.error(f"直接播放响应失败: {e}")
-                return False
+                logger.warning(f"立即播放失败，将在下一次媒体状态改变时尝试: {e}")
+                # 不返回错误，而是等待onCallMediaState处理
+                return True
                 
         except Exception as e:
             logger.error(f"播放响应过程中出错: {e}")

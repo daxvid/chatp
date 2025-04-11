@@ -659,7 +659,6 @@ class SIPCaller:
                     # 使用TTS管理器生成语音
                     tts_voice = self.config.get('tts_voice', 'zh-CN-XiaoxiaoNeural')
                     response_voice_file = self.tts_manager.generate_tts_sync(tts_text, tts_voice)
-                    logger.info(f"TTS语音生成成功: {response_voice_file}")
                 except Exception as e:
                     logger.error(f"TTS语音生成失败: {e}")
                     import traceback

@@ -48,7 +48,6 @@ class TTSManager:
                     wav_path
                 ]
                 
-                logger.info(f"直接转换为WAV格式: {' '.join(cmd)}")
                 subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 
                 # 删除临时文件

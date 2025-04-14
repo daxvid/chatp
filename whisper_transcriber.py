@@ -58,16 +58,16 @@ class WhisperTranscriber:
             if os.path.getsize(audio_file) < 1000:  # 小于1KB的文件可能有问题
                 logger.warning(f"录音文件过小，可能没有录到声音: {audio_file}")
                 return None
-                
-            logger.info(f"开始语音识别: {audio_file}")
             
             # 使用临时文件处理，避免文件锁定问题
             temp_file = None
+            success = False
             try:
                 # 创建第一个临时文件，在扩展名前加temp
                 timestamp = datetime.now().strftime("_%H%M%S")
                 base_name, ext = os.path.splitext(audio_file)
                 temp_file = f"{base_name}{timestamp}.temp{ext}"
+                logger.info(f"开始语音识别: {temp_file}")
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
                 
@@ -89,7 +89,7 @@ class WhisperTranscriber:
                 # 记录处理时间
                 duration = time.time() - start_time
                 logger.info(f"语音识别耗时: {duration:.2f}秒")
-                
+                success = True
                 if text:
                     logger.info(f"语音识别结果: {text}")
                     return text
@@ -99,12 +99,12 @@ class WhisperTranscriber:
                     
             except Exception as e:
                 logger.error(f"语音识别失败: {e}")
-                logger.error(f"详细错误: {traceback.format_exc()}")
+                #logger.error(f"详细错误: {traceback.format_exc()}")
                 return None
                 
             finally:
                 # 清理临时文件
-                if temp_file and os.path.exists(temp_file):
+                if success and temp_file and os.path.exists(temp_file):
                     try:
                         os.remove(temp_file)
                     except Exception as e:
@@ -112,5 +112,4 @@ class WhisperTranscriber:
                         
         except Exception as e:
             logger.error(f"处理音频文件时出错: {e}")
-            logger.error(f"详细错误: {traceback.format_exc()}")
             return None

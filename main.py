@@ -197,47 +197,11 @@ def get_call_metadata(sip_caller):
 def process_audio_chunk(segment_count, segment_dir, recording_file, current_size, whisper_manager, sip_caller, response_callback):
     """处理录音文件的新增数据块"""
     try:
-        segment_file = os.path.join(segment_dir, f"segment_{segment_count}.wav")
-        
-        # 复制整个录音文件
-        shutil.copy2(recording_file, segment_file)
-        
-        # 使用ffmpeg预处理音频，确保格式正确
-        processed_file = segment_file #os.path.join(segment_dir, f"processed_{segment_count}.wav")
-        
-        # 使用ffmpeg规范化音频
-        #cmd = [
-        #    "ffmpeg", "-y", 
-        #    "-i", segment_file, 
-        #    "-ar", "16000",  # 采样率16kHz
-        #    "-ac", "1",      # 单声道
-        #    "-c:a", "pcm_s16le",  # 16位PCM
-        #    processed_file
-        #]
-        #subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        #logger.info(f"音频预处理成功: {processed_file}")
-        
+        processed_file = recording_file
         # 检查预处理文件
         if os.path.exists(processed_file) and os.path.getsize(processed_file) > 1000:
             # 转录处理
-            text = None
-            # 使用WhisperTranscriber的方法进行转录
-            if sip_caller.current_call and hasattr(sip_caller.current_call, 'transcriber'):
-                text = sip_caller.current_call.transcriber.transcribe_file(processed_file, segment_count)
-            else:
-                # 直接使用whisper模型进行转录
-                try:
-                    result = whisper_manager.model.transcribe(
-                        processed_file,
-                        language="zh",
-                        fp16=False
-                    )
-                    text = result.get("text", "").strip()
-                    if text:
-                        logger.info(f"语音识别结果 (段{segment_count}): {text}")
-                except Exception as e:
-                    logger.error(f"转录尝试失败: {e}")
-            
+            text = sip_caller.current_call.transcriber.transcribe_file(processed_file, segment_count)
             # 如果成功识别到文本，调用回调
             if text:
                 # 如果提供了转录结果回调函数，调用它
@@ -246,15 +210,6 @@ def process_audio_chunk(segment_count, segment_dir, recording_file, current_size
         else:
             logger.warning(f"预处理后的音频文件过小或不存在: {processed_file}")
     
-        # 清理临时文件
-        try:
-            if os.path.exists(segment_file):
-                os.remove(segment_file)
-            if os.path.exists(processed_file):
-                os.remove(processed_file)
-        except Exception as e:
-            logger.warning(f"无法删除临时文件: {e}")
-            
         return current_size
     except Exception as e:
         logger.error(f"处理音频块失败: {e}")

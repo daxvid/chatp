@@ -12,6 +12,7 @@ import math
 import struct
 import random
 import wave
+import traceback
 from datetime import datetime
 import concurrent.futures
 
@@ -80,6 +81,22 @@ class SIPCall(pj.Call):
         self.audio_recorder = None
         self.transcriber = None
         self.player = None
+        self.last_size = 0
+        self.last_transcription_time = time.time()
+        self.min_chunk_size = 8000  # 至少8KB新数据才处理
+        self.segment_count = 0
+        # 通话结果数据
+        self.call_result = {
+            'phone_number': phone_number,
+            'call_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'status': '未接通',
+            'duration': '',
+            'recording': '',
+            'transcription': '',
+            'start_time': datetime.now(),
+            'end_time': None
+        }
+    
 
         # 获取全局Endpoint实例，提前准备好
         try:
@@ -165,17 +182,14 @@ class SIPCall(pj.Call):
                         logger.info(f"开始录音: {self.recording_file}")
                     except Exception as e:
                         logger.error(f"连接录音设备失败: {e}")
-                        import traceback
                         logger.error(f"详细错误: {traceback.format_exc()}")
                 
             except Exception as e:
                 logger.error(f"处理音频媒体时出错: {e}")
-                import traceback
                 logger.error(f"详细错误: {traceback.format_exc()}")
                 
         except Exception as e:
             logger.error(f"处理呼叫媒体状态改变时出错: {e}")
-            import traceback
             logger.error(f"详细错误: {traceback.format_exc()}")
             
     def stop_recording(self):
@@ -223,7 +237,6 @@ class SIPCall(pj.Call):
                 
         except Exception as e:
             logger.error(f"转录录音文件失败: {e}")
-            import traceback
             logger.error(f"详细错误: {traceback.format_exc()}")
             return None
             
@@ -256,12 +269,23 @@ class SIPCall(pj.Call):
                 
             elif ci.state == pj.PJSIP_INV_STATE_CONFIRMED:
                 logger.info("通话已接通")
+                # 更新通话状态为已接通
+                self.call_result['status'] = '接通'
+                
                 # 如果有指定电话号码，启动录音
                 if self.phone_number:
                     self.start_recording(self.phone_number)
                 
             elif ci.state == pj.PJSIP_INV_STATE_DISCONNECTED:
                 logger.info(f"通话已结束: 状态码={ci.lastStatusCode}, 原因={ci.lastReason}")
+                
+                # 记录通话结束时间
+                self.call_result['end_time'] = datetime.now()
+                
+                # 如果之前标记为接通，则计算通话时长
+                if self.call_result['status'] == '接通':
+                    duration = (self.call_result['end_time'] - self.call_result['start_time']).total_seconds()
+                    self.call_result['duration'] = f"{duration:.1f}秒"
                 
                 # 停止音频传输
                 try:
@@ -275,12 +299,22 @@ class SIPCall(pj.Call):
                 if self.recorder:
                     self.stop_recording()
                     
-                    # 转录通话录音
-                    self.transcribe_audio()
+                    # 转录通话录音并更新结果
+                    transcription = self.transcribe_audio()
+                    if transcription:
+                        self.call_result['transcription'] = transcription
+                        logger.info(f"转录结果: {transcription[:50]}...")
+                    else:
+                        logger.warning("无法获取转录结果")
+                
+                # 更新录音文件路径
+                if hasattr(self, 'recording_file') and self.recording_file:
+                    self.call_result['recording'] = self.recording_file
                     
+                logger.info("通话已挂断")
+                
         except Exception as e:
             logger.error(f"处理呼叫状态变化时出错: {e}")
-            import traceback
             logger.error(f"详细错误: {traceback.format_exc()}")
          
 
@@ -325,11 +359,9 @@ class SIPCall(pj.Call):
                 
         except Exception as e:
             logger.error(f"播放响应过程中出错: {e}")
-            import traceback
             logger.error(f"详细错误: {traceback.format_exc()}")
             return False
 
-    def get_transcription_results(self):
         """获取转录结果，供main.py循环调用"""
         try:
             if hasattr(self, 'transcription_results') and self.transcription_results:
@@ -341,6 +373,67 @@ class SIPCall(pj.Call):
         except Exception as e:
             logger.error(f"获取转录结果失败: {e}")
             return []
+
+    def is_active(self):
+        """检查通话是否活跃"""
+        try:
+            if not self:
+                return False
+                
+            ci = self.getInfo()
+            return ci.state != pj.PJSIP_INV_STATE_DISCONNECTED
+        except:
+            return False
+
+    def voice_check(self):
+        # 实时转录逻辑
+        recording_file = self.recording_file
+        if recording_file and os.path.exists(recording_file) and self.whisper_model:
+            # 获取当前文件大小
+            current_size = os.path.getsize(recording_file)
+            # 如果文件有显著增长，处理新数据
+            size_diff = current_size - self.last_size
+            if size_diff > self.min_chunk_size:
+                self.segment_count += 1
+                logger.info(f"检测到录音文件增长: 段{self.segment_count}, {self.last_size} -> {current_size} 字节 (+{size_diff}字节)")
+                
+                # 确保有足够的间隔让Whisper处理数据
+                time_since_last = time.time() - self.last_transcription_time
+                if time_since_last < 1.0:
+                    time.sleep(1.0 - time_since_last)
+                # 处理新的音频段
+                new_size = self.process_audio_chunk( current_size)
+                
+                # 更新时间和大小
+                self.last_transcription_time = time.time()
+                if new_size is not None:
+                    self.last_size = new_size
+                else:
+                    self.last_size = current_size
+
+    def process_audio_chunk(self, current_size):
+        """处理录音文件的新增数据块"""
+        try:
+            processed_file = self.recording_file
+            # 检查预处理文件
+            if os.path.exists(processed_file) and os.path.getsize(processed_file) > 1000:
+                if not self.transcriber:
+                    self.transcriber = WhisperTranscriber(self.whisper_model)
+                # 转录处理
+                text = self.transcriber.transcribe_file(processed_file, self.segment_count)
+                # 如果成功识别到文本，调用回调
+                if text:
+                    # 如果提供了转录结果回调函数，调用它
+                    self.response_callback(text)
+            else:
+                logger.warning(f"预处理后的音频文件过小或不存在: {processed_file}")
+        
+            return current_size
+        except Exception as e:
+            logger.error(f"处理音频块失败: {e}")
+            logger.error(f"详细错误: {traceback.format_exc()}")
+            return None
+
 
 class SIPCaller:
     """SIP呼叫管理类"""
@@ -454,7 +547,6 @@ class SIPCaller:
             
         except Exception as e:
             logger.error(f"拨打电话失败: {e}")
-            import traceback
             logger.error(f"详细错误: {traceback.format_exc()}")
             return False
 

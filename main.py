@@ -171,72 +171,6 @@ def setup_transcription_env():
         logger.error(f"详细错误: {traceback.format_exc()}")
         return "segments"  # 返回默认值
 
-def get_call_metadata(sip_caller):
-    """获取当前通话的元数据，如录音文件和回调函数"""
-    try:
-        data = {
-            'recording_file': None,
-            'response_callback': None,
-        }
-        
-        if sip_caller.current_call:
-            if hasattr(sip_caller.current_call, 'recording_file'):
-                data['recording_file'] = sip_caller.current_call.recording_file
-            if hasattr(sip_caller.current_call, 'response_callback'):
-                data['response_callback'] = sip_caller.current_call.response_callback
-                
-        return data
-    except Exception as e:
-        logger.error(f"获取通话元数据失败: {e}")
-        logger.error(f"详细错误: {traceback.format_exc()}")
-        return {
-            'recording_file': None,
-            'response_callback': None
-        }
-
-def process_audio_chunk(segment_count, segment_dir, recording_file, current_size, whisper_manager, sip_caller, response_callback):
-    """处理录音文件的新增数据块"""
-    try:
-        processed_file = recording_file
-        # 检查预处理文件
-        if os.path.exists(processed_file) and os.path.getsize(processed_file) > 1000:
-            # 转录处理
-            text = sip_caller.current_call.transcriber.transcribe_file(processed_file, segment_count)
-            # 如果成功识别到文本，调用回调
-            if text:
-                # 如果提供了转录结果回调函数，调用它
-                if response_callback:
-                    response_callback(text)
-        else:
-            logger.warning(f"预处理后的音频文件过小或不存在: {processed_file}")
-    
-        return current_size
-    except Exception as e:
-        logger.error(f"处理音频块失败: {e}")
-        logger.error(f"详细错误: {traceback.format_exc()}")
-        return None
-
-def update_transcription_display(sip_caller, last_count):
-    """更新转录结果显示"""
-    try:
-        if hasattr(sip_caller.current_call, 'get_transcription_results'):
-            current_results = sip_caller.current_call.get_transcription_results()
-            if current_results and len(current_results) > last_count:
-                # 有新的转录结果
-                for i in range(last_count, len(current_results)):
-                    result = current_results[i]
-                    # 在控制台打印明显的转录结果
-                    print("\n" + "="*20 + " 实时转录 " + "="*20)
-                    print(f"时间: {result['timestamp']}")
-                    print(f"内容: {result['text']}")
-                    print("="*50 + "\n")
-                # 更新计数
-                return len(current_results)
-    except Exception as e:
-        logger.debug(f"获取转录结果时出错: {e}")
-    
-    return last_count
-
 def check_call_state(sip_caller):
     """检查通话状态"""
     try:
@@ -280,14 +214,6 @@ def wait_for_call_completion(call_manager, whisper_manager, timeout=180):
     
     # 实时转录相关变量
     segment_dir = setup_transcription_env()
-    call_metadata = get_call_metadata(sip_caller)
-    recording_file = call_metadata['recording_file']
-    response_callback = call_metadata['response_callback']
-    
-    last_size = 0
-    last_transcription_time = time.time()
-    min_chunk_size = 8000  # 至少8KB新数据才处理
-    segment_count = 0
     
     while sip_caller.current_call and sip_caller.current_call.isActive():
         # 检查退出请求
@@ -305,38 +231,6 @@ def wait_for_call_completion(call_manager, whisper_manager, timeout=180):
         # 检查通话状态
         if check_call_state(sip_caller):
             break
-            
-        # 实时转录逻辑
-        if recording_file and os.path.exists(recording_file) and whisper_manager.model:
-            # 获取当前文件大小
-            current_size = os.path.getsize(recording_file)
-            
-            # 如果文件有显著增长，处理新数据
-            size_diff = current_size - last_size
-            if size_diff > min_chunk_size:
-                segment_count += 1
-                logger.info(f"检测到录音文件增长: 段{segment_count}, {last_size} -> {current_size} 字节 (+{size_diff}字节)")
-                
-                # 确保有足够的间隔让Whisper处理数据
-                time_since_last = time.time() - last_transcription_time
-                if time_since_last < 1.0:
-                    time.sleep(1.0 - time_since_last)
-                    
-                # 处理新的音频段
-                new_size = process_audio_chunk(
-                    segment_count, segment_dir, recording_file, current_size,
-                    whisper_manager, sip_caller, response_callback
-                )
-                
-                # 更新时间和大小
-                last_transcription_time = time.time()
-                if new_size is not None:
-                    last_size = new_size
-                else:
-                    last_size = current_size
-        
-        # 更新转录结果显示
-        last_transcription_count = update_transcription_display(sip_caller, last_transcription_count)
         
         # 短暂休眠
         time.sleep(0.5)
@@ -462,7 +356,6 @@ def init_whisper_model():
         return model
     except Exception as e:
         logger.error(f"加载Whisper模型失败: {e}")
-        import traceback
         logger.error(f"详细错误: {traceback.format_exc()}")
         return None
 

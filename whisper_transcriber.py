@@ -1,5 +1,6 @@
 import os
 import time
+from datetime import datetime
 import logging
 import shutil
 import threading
@@ -63,11 +64,17 @@ class WhisperTranscriber:
             # 使用临时文件处理，避免文件锁定问题
             temp_file = None
             try:
-                # 创建临时文件
-                temp_file = audio_file + ".temp"
+                # 创建第一个临时文件，在扩展名前加temp
+                timestamp = datetime.now().strftime("_%H%M%S")
+                base_name, ext = os.path.splitext(audio_file)
+                temp_file = f"{base_name}{timestamp}.temp{ext}"
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
-                shutil.copy2(audio_file, temp_file)
+                
+                # 使用ffmpeg去掉静音
+                # ffmpeg -i input.wav -af silenceremove=stop_periods=-1:stop_duration=0.5:stop_threshold=-50dB output.wav
+                ffmpeg_command = f"ffmpeg -i {audio_file} -af silenceremove=stop_periods=-1:stop_duration=0.5:stop_threshold=-50dB {temp_file}"
+                subprocess.run(ffmpeg_command, shell=True, check=True)
                 
                 # 使用Whisper模型进行转录
                 result = self.whisper_model.transcribe(

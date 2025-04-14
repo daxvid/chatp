@@ -220,6 +220,7 @@ class SIPCall(pj.Call):
                 self.transcriber = WhisperTranscriber(self.whisper_model)
                 
             return self.transcriber.transcribe_file(self.recording_file)
+                
         except Exception as e:
             logger.error(f"转录录音文件失败: {e}")
             import traceback

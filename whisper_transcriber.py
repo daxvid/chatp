@@ -68,7 +68,7 @@ class WhisperTranscriber:
             if os.path.getsize(audio_file) < 1000:  # 小于1KB的文件可能有问题
                 logger.warning(f"录音文件过小，可能没有录到声音: {audio_file}")
                 return None
-
+                
             logger.info(f"开始语音识别: {audio_file}")
             start_time = time.time()
             

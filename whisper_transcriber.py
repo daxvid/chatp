@@ -42,19 +42,8 @@ class WhisperTranscriber:
         self.whisper_model = model
     
     def transcribe_file(self, audio_file, segment_count=0):
-        # 使用ffmpeg规范化音频
-        #cmd = [
-        #    "ffmpeg", "-y", 
-        #    "-i", segment_file, 
-        #    "-ar", "16000",  # 采样率16kHz
-        #    "-ac", "1",      # 单声道
-        #    "-c:a", "pcm_s16le",  # 16位PCM
-        #    processed_file
-        #]
-        #subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        #logger.info(f"音频预处理成功: {processed_file}")
-        
         """语音识别单个音频文件"""
+        start_time = time.time()
         try:
             if not self.whisper_model:
                 logger.error("Whisper模型未加载，无法进行语音识别")
@@ -70,7 +59,6 @@ class WhisperTranscriber:
                 return None
                 
             logger.info(f"开始语音识别: {audio_file}")
-            start_time = time.time()
             
             # 使用临时文件处理，避免文件锁定问题
             temp_file = None
@@ -92,9 +80,8 @@ class WhisperTranscriber:
                 text = result.get("text", "").strip()
                 
                 # 记录处理时间
-                end_time = time.time()
-                duration = end_time - start_time
-                logger.info(f"语音识别时间: {duration:.2f}秒")
+                duration = time.time() - start_time
+                logger.info(f"语音识别耗时: {duration:.2f}秒")
                 
                 if text:
                     logger.info(f"语音识别结果: {text}")

@@ -80,15 +80,15 @@ class CallManager:
             # 如果呼叫建立成功，等待通话完成
             if call_result:
                 logger.info(f"电话 {phone_number} 呼叫建立，等待通话完成...")
-                
+                current_call = self.sip_caller.current_call
                 # 等待通话结束
-                while self.sip_caller.current_call and self.sip_caller.current_call.is_active():
-                    self.sip_caller.current_call.voice_check()
-                    time.sleep(0.1)
+                while current_call and current_call.is_active():
+                    time.sleep(1)
+                    current_call.voice_check()
                 
                 # 从SIPCall获取呼叫结果
-                if self.sip_caller.current_call:
-                    result = self.sip_caller.current_call.call_result
+                if current_call:
+                    result = current_call.call_result
                     # 保存结果
                     self.call_results.append(result)
                     logger.info(f"电话 {phone_number} 处理完成: 状态={result['status']}, 时长={result['duration']}")

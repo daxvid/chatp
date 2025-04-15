@@ -79,7 +79,7 @@ class SIPCall(pj.Call):
         self.audio_media = None
         self.ep = None
         self.audio_recorder = None
-        self.transcriber = None
+        self.transcriber = WhisperTranscriber(whisper_model)
         self.player = None
         self.last_size = 0
         self.last_transcription_time = time.time()
@@ -229,9 +229,6 @@ class SIPCall(pj.Call):
             if not self.whisper_model:
                 logger.error("Whisper模型未加载，无法进行语音识别")
                 return None
-            
-            if not self.transcriber:
-                self.transcriber = WhisperTranscriber(self.whisper_model)
                 
             return self.transcriber.transcribe_file(self.recording_file)
                 
@@ -417,8 +414,6 @@ class SIPCall(pj.Call):
             processed_file = self.recording_file
             # 检查预处理文件
             if os.path.exists(processed_file) and os.path.getsize(processed_file) > 1000:
-                if not self.transcriber:
-                    self.transcriber = WhisperTranscriber(self.whisper_model)
                 # 转录处理
                 text = self.transcriber.transcribe_file(processed_file, self.segment_count)
                 # 如果成功识别到文本，调用回调

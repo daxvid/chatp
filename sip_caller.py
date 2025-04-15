@@ -69,13 +69,11 @@ class SIPCall(pj.Call):
     """SIP通话类，继承自pjsua2.Call"""
     def __init__(self, acc, voice_file=None, whisper_model=None, phone_number=None):
         pj.Call.__init__(self, acc)
-        self.voice_file = voice_file
         self.recorder = None
         self.recording_file = None
         self.whisper_model = whisper_model
         self.phone_number = phone_number
         self.audio_port = None
-        self.should_play_response = False
         self.tts_manager = None
         self.response_manager = None
         self.audio_media = None
@@ -87,6 +85,7 @@ class SIPCall(pj.Call):
         self.last_transcription_time = time.time()
         self.min_chunk_size = 8000  # 至少8KB新数据才处理
         self.segment_count = 0
+        self.all_transcription = ''
         # 通话结果数据
         self.call_result = {
             'phone_number': phone_number,
@@ -223,40 +222,21 @@ class SIPCall(pj.Call):
                 response_text = self.response_manager.get_response(text)
                 if response_text:
                     logger.info(f"匹配到回复: {response_text}")
-                    
-                    # 检查是否已经有语音文件
-                    if not self.voice_file or not os.path.exists(self.voice_file):
-                        # 使用TTS生成语音
-                        if self.tts_manager:
-                            # 创建临时路径用于存储TTS文件
-                            tts_dir = "tts_temp"
-                            os.makedirs(tts_dir, exist_ok=True)
-                            
-                            # 生成TTS文件
-                            voice_name = "zh-CN-XiaoxiaoNeural"  # 默认语音
-                            tts_file = self.tts_manager.generate_tts(response_text, voice_name)
-                            
-                            if tts_file and os.path.exists(tts_file):
-                                self.voice_file = tts_file
-                                # 播放回复
-                                self.play_response_direct()
-                            else:
-                                logger.error(f"生成TTS文件失败")
+                    # 使用TTS生成语音
+                    if self.tts_manager:
+                        # 生成TTS文件
+                        voice_name = "zh-CN-XiaoxiaoNeural"  # 默认语音
+                        voice_file = self.tts_manager.generate_tts_sync(response_text, voice_name)
+                        if voice_file and os.path.exists(voice_file):
+                            self.play_response_direct(voice_file)
                         else:
-                            logger.error(f"TTS管理器未初始化")
+                            logger.error(f"生成TTS文件失败")
                     else:
-                        # 直接播放已有的语音文件
-                        if not self.should_play_response:
-                            self.play_response_direct()
+                        logger.error(f"TTS管理器未初始化")
                 else:
                     logger.info(f"没有匹配到回复规则")
             else:
                 logger.info(f"ResponseManager未初始化")
-                
-                # 向后兼容原有逻辑
-                if "我是" in text:
-                    if not self.should_play_response:
-                        self.play_response_direct()
 
     def transcribe_audio(self):
         """使用Whisper转录录音文件"""
@@ -350,15 +330,17 @@ class SIPCall(pj.Call):
             logger.error(f"详细错误: {traceback.format_exc()}")
          
 
-    def play_response_direct(self):
+    def play_response_direct(self, voice_file=None):
         """直接播放响应音频到通话对方"""
         try:
-            if not self.voice_file or not os.path.exists(self.voice_file):
-                logger.error(f"响应语音文件不存在: {self.voice_file}")
+            if not os.path.exists(voice_file):
+                logger.error(f"响应语音文件不存在: {voice_file}")
                 return False
-                
-            # 设置标志，通知onCallMediaState在媒体状态改变时播放
-            self.should_play_response = True
+
+            # 停止当前播放
+            if self.player:
+                self.player.stopTransmit(self.audio_media)
+                self.player = None
             
             # 尝试立即播放，如果可能的话
             try:
@@ -368,18 +350,19 @@ class SIPCall(pj.Call):
                     # 创建自定义音频播放器
                     player = CustomAudioMediaPlayer()
                     # 使用PJMEDIA_FILE_NO_LOOP标志创建播放器
-                    player.createPlayer(self.voice_file, pj.PJMEDIA_FILE_NO_LOOP)
+                    player.createPlayer(voice_file, pj.PJMEDIA_FILE_NO_LOOP)
                     
                     # 注册播放完成回调
                     def on_playback_complete():
                         player.stopTransmit(audio_media)
-                        logger.info(f"结束播放语音: {self.voice_file}")
+                        logger.info(f"结束播放语音: {voice_file}")
 
                     player.setEofCallback(on_playback_complete)
                     # 播放到通话媒体
                     player.startTransmit(audio_media)
-                    logger.info(f"开始播放语音: {self.voice_file}")
+                    logger.info(f"开始播放语音: {voice_file}")
                     self.player = player
+                    self.audio_media = audio_media
                     return True
                 else:
                     logger.warning("无法获取音频媒体，将在下一次媒体状态变化时尝试播放")
@@ -450,11 +433,15 @@ class SIPCall(pj.Call):
             # 检查预处理文件
             if os.path.exists(processed_file) and os.path.getsize(processed_file) > 1000:
                 # 转录处理
-                text = self.transcriber.transcribe_file(processed_file, self.segment_count)
-                # 如果成功识别到文本，调用回调
-                if text:
-                    # 如果提供了转录结果回调函数，调用它
-                    self.response_callback(text)
+                new_text = self.transcriber.transcribe_file(processed_file, self.segment_count)
+                if new_text!= self.all_transcription:
+                    # 去掉原来已处理过的文本
+                    text = new_text.replace(self.all_transcription, "", 1)
+                    self.all_transcription = new_text
+                    # 如果成功识别到文本，调用回调
+                    if text and text != '':
+                        # 如果提供了转录结果回调函数，调用它
+                        self.response_callback(text)
             else:
                 logger.warning(f"预处理后的音频文件过小或不存在: {processed_file}")
         

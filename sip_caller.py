@@ -42,6 +42,8 @@ except ImportError:
 from tts_manager import TTSManager
 # 引入WhisperTranscriber
 from whisper_transcriber import WhisperTranscriber
+# 引入ResponseManager
+from response_manager import ResponseManager
 
 # 禁用SSL证书验证
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -75,7 +77,7 @@ class SIPCall(pj.Call):
         self.audio_port = None
         self.should_play_response = False
         self.tts_manager = None
-        self.response_configs = None
+        self.response_manager = None
         self.audio_media = None
         self.ep = None
         self.audio_recorder = None
@@ -215,14 +217,47 @@ class SIPCall(pj.Call):
         """处理转录结果的回调函数"""
         if text:
             logger.info(f"收到转录结果: {text}")
-            # 这里可以添加其他处理逻辑，如关键词匹配等
-            if "我是" in text:
-                if not self.should_play_response:
-                    self.play_response_direct()
-                # 可以在这里添加其他处理逻辑，例如记录对话开始时间等
             
-            
-            
+            # 使用ResponseManager获取回复
+            if self.response_manager:
+                response_text = self.response_manager.get_response(text)
+                if response_text:
+                    logger.info(f"匹配到回复: {response_text}")
+                    
+                    # 检查是否已经有语音文件
+                    if not self.voice_file or not os.path.exists(self.voice_file):
+                        # 使用TTS生成语音
+                        if self.tts_manager:
+                            # 创建临时路径用于存储TTS文件
+                            tts_dir = "tts_temp"
+                            os.makedirs(tts_dir, exist_ok=True)
+                            
+                            # 生成TTS文件
+                            voice_name = "zh-CN-XiaoxiaoNeural"  # 默认语音
+                            tts_file = self.tts_manager.generate_tts(response_text, voice_name)
+                            
+                            if tts_file and os.path.exists(tts_file):
+                                self.voice_file = tts_file
+                                # 播放回复
+                                self.play_response_direct()
+                            else:
+                                logger.error(f"生成TTS文件失败")
+                        else:
+                            logger.error(f"TTS管理器未初始化")
+                    else:
+                        # 直接播放已有的语音文件
+                        if not self.should_play_response:
+                            self.play_response_direct()
+                else:
+                    logger.info(f"没有匹配到回复规则")
+            else:
+                logger.info(f"ResponseManager未初始化")
+                
+                # 向后兼容原有逻辑
+                if "我是" in text:
+                    if not self.should_play_response:
+                        self.play_response_direct()
+
     def transcribe_audio(self):
         """使用Whisper转录录音文件"""
         try:
@@ -439,7 +474,9 @@ class SIPCaller:
         self.current_call = None
         self.phone_number = None
         self.whisper_model = None
-        self.response_configs = self._load_response_configs()
+        
+        # 初始化ResponseManager
+        self.response_manager = ResponseManager(yaml_file="response.yaml")
         
         # 初始化TTS管理器
         self.tts_manager = TTSManager()
@@ -520,9 +557,9 @@ class SIPCaller:
 
             # 创建通话对象，并传入电话号码和响应语音文件
             call = SIPCall(self.acc, voice_file, self.whisper_model, number)
-            # 传递tts_manager和response_configs到通话对象
+            # 传递tts_manager和response_manager到通话对象
             call.tts_manager = self.tts_manager
-            call.response_configs = self.response_configs
+            call.response_manager = self.response_manager
             
             # 设置呼叫参数
             call_param = pj.CallOpParam(True)
@@ -594,24 +631,10 @@ class SIPCaller:
         try:
             # 尝试从config中读取回复规则
             response_configs = {}
-            
-            # 如果config中包含response_rules，则加载
-            if 'response_rules' in self.config:
-                response_configs['rules'] = self.config['response_rules']
                 
             # 默认回复
-            if 'default_response' in self.config:
-                response_configs['default_response'] = self.config['default_response']
-            else:
-                response_configs['default_response'] = "谢谢您的来电，我们已收到您的信息。"
+
                 
-            # TTS语音
-            if 'tts_voice' in self.config:
-                response_configs['tts_voice'] = self.config['tts_voice']
-            else:
-                response_configs['tts_voice'] = "zh-CN-XiaoxiaoNeural"
-                
-            logger.info(f"已加载回复配置: {len(response_configs.get('rules', []))}条规则")
             return response_configs
             
         except Exception as e:

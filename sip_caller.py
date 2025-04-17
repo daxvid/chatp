@@ -41,8 +41,8 @@ except ImportError:
 
 # 引入TTSManager
 from tts_manager import TTSManager
-# 引入WhisperTranscriber
-from whisper_transcriber import WhisperTranscriber
+# 引入WhisperManager
+from whisper_manager import WhisperManager
 # 引入ResponseManager
 from response_manager import ResponseManager
 
@@ -68,11 +68,11 @@ class CustomAudioMediaPlayer(pj.AudioMediaPlayer):
 
 class SIPCall(pj.Call):
     """SIP通话类，继承自pjsua2.Call"""
-    def __init__(self, acc, voice_file=None, whisper_model=None, phone_number=None):
+    def __init__(self, acc, whisper_manager=None, phone_number=None):
         pj.Call.__init__(self, acc)
         self.recorder = None
         self.recording_file = None
-        self.whisper_model = whisper_model
+        self.whisper_manager = whisper_manager
         self.phone_number = phone_number
         self.audio_port = None
         self.tts_manager = None
@@ -80,12 +80,10 @@ class SIPCall(pj.Call):
         self.audio_media = None
         self.ep = None
         self.audio_recorder = None
-        self.transcriber = WhisperTranscriber(whisper_model)
         self.player = None
         self.chunks_size = 0     # 已保存的音频段数量
-        self.process_count = 0   # 转录过的音频段数量
-        self.talk_list = list()  # 对话列表
-        self.process_talk = 0    # 处理过的对话数量
+        self.file_list = list()  # 已分段的对话文件列表
+        self.talk_list = list()  # 已转录的文本内容
         # 通话结果数据
         self.call_result = {
             'phone_number': phone_number,
@@ -239,12 +237,13 @@ class SIPCall(pj.Call):
 
     def transcribe_audio(self):
         """使用Whisper转录录音文件"""
-        try:
-            if not self.whisper_model:
-                logger.error("Whisper模型未加载，无法进行语音识别")
+        try:    
+            result = self.whisper_manager.transcribe_and_wait_result(self.recording_file)
+            if result:
+                return result.get("text", "").strip()
+            else:
+                logger.warning("无法获取转录结果")
                 return None
-                
-            return self.transcriber.transcribe_file(self.recording_file)
                 
         except Exception as e:
             logger.error(f"转录录音文件失败: {e}")
@@ -328,7 +327,6 @@ class SIPCall(pj.Call):
             logger.error(f"处理呼叫状态变化时出错: {e}")
             logger.error(f"详细错误: {traceback.format_exc()}")
          
-
     def play_response_direct(self, voice_file=None):
         """直接播放响应音频到通话对方"""
         try:
@@ -399,21 +397,10 @@ class SIPCall(pj.Call):
         except:
             return False
 
-    def is_last_chunk_complete(self, audio, last_chunk, min_silence_len=1000, silence_thresh=-50):
-        # 获取末尾500ms片段（避免漏检短静音）
-        end_segment = audio[-500:] 
-        silent_ranges = pydub.silence.detect_silence(
-            end_segment, 
-            min_silence_len=min_silence_len,  # 降低检测阈值
-            silence_thresh=silence_thresh
-        )
-        return len(silent_ranges) > 0  # 存在静音段则判定完整
-
-
     def voice_check(self):
         # 语音分段逻辑,将录音文件分段,每段至少800ms,每段结束时计算RMS值,如果低于-50 dBFS阈值,认为是静音,则保存该段,否则停止分段
         recording_file = self.recording_file
-        if not (recording_file and os.path.exists(recording_file) and self.whisper_model):
+        if not (recording_file and os.path.exists(recording_file)):
             return
 
         min_silence_len = 800
@@ -445,58 +432,51 @@ class SIPCall(pj.Call):
 
             base_name, ext = os.path.splitext(recording_file)
             chunk_file = f"{base_name}_{i}{ext}"
-            chunk.export(chunk_file, format="wav")
+            chunk.export(chunk_file, format="wav")  
             self.chunks_size += 1
+            self.file_list.append(chunk_file)
+            self.whisper_manager.transcribe(chunk_file)
             logger.info(f"录音文件第: {self.chunks_size} 段")
 
-    def process_audio_chunk(self):
-        """处理录音文件的新增数据块"""
-        if self.process_count >= self.chunks_size:
-            return
-
-        new_talk = ''
-        try:
-            base_name, ext = os.path.splitext(self.recording_file)
-            chunk_file = f"{base_name}_{self.process_count}{ext}"
-            # 检查预处理文件
-            if os.path.exists(chunk_file):
-                # 转录处理
-                new_talk = self.transcriber.transcribe_file2(chunk_file)
-        except Exception as e:
-            logger.error(f"处理音频块失败: {e}")
-            logger.error(f"详细错误: {traceback.format_exc()}")
-        finally:
-            self.talk_list.append(new_talk)
-            self.process_count += 1
-
-    def process_talk_list(self):
+    def process_file_list(self):
         """处理对话列表"""
-        process_talk = self.process_talk 
-        if process_talk >= len(self.talk_list):
+        process_talk = len(self.talk_list)
+        if process_talk >= len(self.file_list):
             return
-        for i in range(process_talk, len(self.talk_list)):
-            self.process_talk+=1
-            talk = self.talk_list[i]
-            # 如果成功识别到文本，调用回调
-            if talk and talk != '':
-                self.response_callback(talk)
-
+            
+        for i in range(process_talk, len(self.file_list)):
+            chunk_file = self.file_list[i]
+            # 获取转录结果，如果可用
+            if self.whisper_manager.is_transcription_complete(chunk_file):
+                talk = ''
+                try:
+                    result = self.whisper_manager.get_result(chunk_file)
+                    if result:
+                        talk = result.get("text", "").strip()
+                        # 如果成功识别到文本，调用回调
+                        if talk and talk != '':
+                            self.response_callback(talk)
+                except Exception as e:
+                    logger.error(f"获取异步转录结果失败: {e}")
+                finally:
+                    logger.info(f"获取到音频段 {i+1} 的转录结果: {talk[:30]}...")
+                    self.talk_list.append(talk)
 
 class SIPCaller:
     """SIP呼叫管理类"""
-    def __init__(self, sip_config):
+    def __init__(self, sip_config, tts_manager, whisper_manager):
         self.config = sip_config
         self.ep = None
         self.acc = None
         self.current_call = None
         self.phone_number = None
-        self.whisper_model = None
         
         # 初始化ResponseManager
         self.response_manager = ResponseManager(yaml_file="response.yaml")
         
         # 初始化TTS管理器
-        self.tts_manager = TTSManager()
+        self.tts_manager = tts_manager
+        self.whisper_manager = whisper_manager
         
         # 初始化PJSIP
         self._init_pjsua2()
@@ -555,7 +535,7 @@ class SIPCaller:
             logger.error(f"初始化PJSIP失败: {e}")
             raise
 
-    def make_call(self, number, voice_file=None):
+    def make_call(self, number):
         """拨打电话"""
         if self.current_call:
             logger.warning("已有通话在进行中")
@@ -573,7 +553,7 @@ class SIPCaller:
             logger.info(f"SIP账户: {self.config.get('username', '')}@{self.config.get('server', '')}:{self.config.get('port', '')}")
 
             # 创建通话对象，并传入电话号码和响应语音文件
-            call = SIPCall(self.acc, voice_file, self.whisper_model, number)
+            call = SIPCall(self.acc, self.whisper_manager, number)
             # 传递tts_manager和response_manager到通话对象
             call.tts_manager = self.tts_manager
             call.response_manager = self.response_manager
@@ -635,9 +615,6 @@ class SIPCaller:
             self.acc = None
             self.ep = None
 
-    def set_whisper_model(self, model):
-        """设置Whisper模型"""
-        self.whisper_model = model
         
     def _load_response_configs(self):
         """加载回复配置"""

@@ -66,36 +66,24 @@ class CallManager:
             logger.error(f"保存呼叫结果失败: {e}")
             return False
             
-    def make_call_with_tts(self, phone_number, wav_file):
+    def make_call_with_tts(self, phone_number):
         """使用TTS拨打电话"""
         try:
             logger.info(f"准备拨打电话 {phone_number}...")
-                
-            # 设置Whisper模型
-            self.sip_caller.set_whisper_model(self.whisper_manager.model)
-            
+
             # 拨打电话
             logger.info(f"开始拨打电话: {phone_number}")
-            call = self.sip_caller.make_call(phone_number, wav_file)
+            call = self.sip_caller.make_call(phone_number)
             
             # 如果呼叫建立成功，等待通话完成
             if call:
                 logger.info(f"电话 {phone_number} 呼叫建立，等待通话完成...")
-                
-                def process_audio_chunk_thread():
-                    while call.is_active():
-                        call.process_audio_chunk()
-                        time.sleep(0.01)
-                
-                thread = threading.Thread(target=process_audio_chunk_thread)
-                thread.start()
 
                 while call.is_active():
                     call.voice_check()
-                    call.process_talk_list()
-                    while call.process_count < call.chunks_size:
-                        time.sleep(0.1)
-                        call.process_talk_list()
+                    while len(call.talk_list) < len(call.file_list):
+                        call.process_file_list()
+                        time.sleep(0.01)
                     time.sleep(0.01)
                 
                 # 从SIPCall获取呼叫结果

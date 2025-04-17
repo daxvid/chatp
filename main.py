@@ -17,7 +17,6 @@ from tts_manager import TTSManager
 from whisper_manager import WhisperManager
 from sip_caller import SIPCaller
 from call_manager import CallManager
-from whisper_transcriber import WhisperTranscriber
 
 # 禁用全局SSL证书验证
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -101,7 +100,7 @@ def initialize_services(sip_config):
         # 初始化SIP客户端
         logger.info(f"初始化SIP客户端: {sip_config['server']}:{sip_config['port']}")
         try:
-            sip_caller = SIPCaller(sip_config)
+            sip_caller = SIPCaller(sip_config, tts_manager, whisper_manager)
             logger.info("SIP客户端初始化成功")
         except Exception as e:
             logger.error(f"SIP客户端初始化失败: {e}")
@@ -231,11 +230,11 @@ def wait_for_call_completion(call_manager, whisper_manager, timeout=180):
     logger.info("等待录音和转录完成...")
     time.sleep(3)
 
-def make_call_and_wait(call_manager, whisper_manager, phone_number, wav_file):
+def make_call_and_wait(call_manager, whisper_manager, phone_number):
     """拨打电话并等待通话完成"""
     try:
         # 拨打电话
-        result = call_manager.make_call_with_tts(phone_number, wav_file)
+        result = call_manager.make_call_with_tts(phone_number)
         
         # 等待通话完成
         wait_for_call_completion(call_manager, whisper_manager)
@@ -246,7 +245,7 @@ def make_call_and_wait(call_manager, whisper_manager, phone_number, wav_file):
         logger.error(f"详细错误: {traceback.format_exc()}")
         return False
 
-def process_phone_list(call_list, call_manager, whisper_manager, wav_file, call_log_file, sip_config):
+def process_phone_list(call_list, call_manager, whisper_manager, call_log_file, sip_config):
     """处理电话号码列表"""
     logger.info(f"共 {len(call_list)} 个号码需要处理")
     
@@ -259,7 +258,7 @@ def process_phone_list(call_list, call_manager, whisper_manager, wav_file, call_
         logger.info(f"正在处理第 {i+1}/{len(call_list)} 个号码: {phone_number}")
         
         # 拨打电话并等待通话完成
-        make_call_and_wait(call_manager, whisper_manager, phone_number, wav_file)
+        make_call_and_wait(call_manager, whisper_manager, phone_number)
         
         # 保存结果
         call_manager.save_call_results(call_log_file)
@@ -270,12 +269,25 @@ def process_phone_list(call_list, call_manager, whisper_manager, wav_file, call_
             wait_for_interval(interval, exit_event)
 
 def cleanup_resources():
-    """清理资源"""
+    """清理系统资源"""
     global sip_caller
-    if sip_caller:
-        logger.info("正在清理资源...")
-        sip_caller.stop()
-        logger.info("SIP服务已停止")
+    try:
+        # 停止SIP客户端
+        if sip_caller:
+            sip_caller.stop()
+            sip_caller = None
+            
+        # 关闭WhisperManager线程池
+        if 'services' in globals() and services and 'whisper_manager' in services:
+            whisper_manager = services.get('whisper_manager')
+            if hasattr(whisper_manager, 'shutdown'):
+                logger.info("关闭WhisperManager线程池...")
+                whisper_manager.shutdown()
+                
+        logger.info("资源清理完成")
+    except Exception as e:
+        logger.error(f"清理资源时出错: {e}")
+        logger.error(f"详细错误: {traceback.format_exc()}")
 
 def main():
     """主程序入口"""
@@ -308,17 +320,11 @@ def main():
             logger.error("未设置TTS文本，请在配置文件中添加tts_text字段")
             return
         
-        # 生成TTS语音文件
-        wav_file = generate_tts_voice(services['call_manager'], config['tts_config'])
-        if wav_file is None:
-            return
-        
         # 处理电话号码列表
         process_phone_list(
             call_list, 
             services['call_manager'], 
             services['whisper_manager'], 
-            wav_file, 
             config['call_log_file'], 
             config['sip_config']
         )

@@ -35,21 +35,14 @@ logger = logging.getLogger("sip")
 class WhisperTranscriber:
     """Whisper语音转文本处理类"""
     
-    def __init__(self, whisper_model=None):
-        self.whisper_model = whisper_model
+    def __init__(self, whisper_manager=None):
+        self.whisper_manager = whisper_manager
     
-    def set_model(self, model):
-        """设置Whisper模型"""
-        self.whisper_model = model
     
     def transcribe_file(self, audio_file, segment_count=0):
         """语音识别单个音频文件"""
         start_time = time.time()
-        try:
-            if not self.whisper_model:
-                logger.error("Whisper模型未加载，无法进行语音识别")
-                return None
-                
+        try:    
             if not audio_file or not os.path.exists(audio_file):
                 logger.error(f"音频文件不存在: {audio_file}")
                 return None
@@ -77,14 +70,7 @@ class WhisperTranscriber:
                 subprocess.run(ffmpeg_command, shell=True, check=True)
                 
                 # 使用Whisper模型进行转录
-                result = self.whisper_model.transcribe(
-                    temp_file,
-                    language="zh",
-                    fp16=False
-                )
-                
-                # 获取转录文本
-                text = result.get("text", "").strip()
+                text = self.whisper_manager.transcribe_and_wait_result(temp_file)
                 
                 # 记录处理时间
                 duration = time.time() - start_time
@@ -115,21 +101,10 @@ class WhisperTranscriber:
             return None
 
     def transcribe_file2(self, audio_file):
-        """语音识别单个音频文件"""
-        if not self.whisper_model:
-            logger.error("Whisper模型未加载，无法进行语音识别")
-            return None
-        
-        start_time = time.time()
+        """语音识别单个音频文件 - 异步版本，使用WhisperManager的线程池"""
         try:
-            # 使用Whisper模型进行转录
-            result = self.whisper_model.transcribe(
-                audio_file,
-                language="zh",
-                fp16=False
-            )
-            # 获取转录文本
-            text = result.get("text", "").strip()
+            start_time = time.time()
+            text = self.whisper_manager.transcribe_and_wait_result(audio_file)
             # 记录处理时间
             duration = time.time() - start_time
             logger.info(f"语音识别耗时: {duration:.2f}秒")
@@ -139,8 +114,8 @@ class WhisperTranscriber:
             else:
                 logger.info("语音识别结果为空")
                 return None
-                
         except Exception as e:
             logger.error(f"语音识别失败: {e}")
+            logger.error(f"详细错误: {traceback.format_exc()}")
             return None
                         

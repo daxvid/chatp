@@ -3,6 +3,7 @@ import time
 import csv
 import logging
 import traceback
+import threading
 from datetime import datetime
 import pjsua2 as pj
 
@@ -75,26 +76,34 @@ class CallManager:
             
             # 拨打电话
             logger.info(f"开始拨打电话: {phone_number}")
-            call_result = self.sip_caller.make_call(phone_number, wav_file)
+            call = self.sip_caller.make_call(phone_number, wav_file)
             
             # 如果呼叫建立成功，等待通话完成
-            if call_result:
+            if call:
                 logger.info(f"电话 {phone_number} 呼叫建立，等待通话完成...")
-                current_call = self.sip_caller.current_call
-                # 等待通话结束
-                while current_call and current_call.is_active():
-                    time.sleep(1)
-                    current_call.voice_check()
+                
+                def process_audio_chunk_thread():
+                    while call.is_active():
+                        call.process_audio_chunk()
+                        time.sleep(0.01)
+                
+                thread = threading.Thread(target=process_audio_chunk_thread)
+                thread.start()
+
+                while call.is_active():
+                    call.voice_check()
+                    call.process_talk_list()
+                    while call.process_count < call.chunks_size:
+                        time.sleep(0.1)
+                        call.process_talk_list()
+                    time.sleep(0.01)
                 
                 # 从SIPCall获取呼叫结果
-                if current_call:
-                    result = current_call.call_result
-                    # 保存结果
-                    self.call_results.append(result)
-                    logger.info(f"电话 {phone_number} 处理完成: 状态={result['status']}, 时长={result['duration']}")
-                    return result
-                else:
-                    logger.warning("呼叫对象无效，无法获取结果")
+                result = call.call_result
+                # 保存结果
+                self.call_results.append(result)
+                logger.info(f"电话 {phone_number} 处理完成: 状态={result['status']}, 时长={result['duration']}")
+                return result
             else:
                 logger.warning(f"电话 {phone_number} 拨打失败")
             

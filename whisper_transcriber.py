@@ -113,3 +113,34 @@ class WhisperTranscriber:
         except Exception as e:
             logger.error(f"处理音频文件时出错: {e}")
             return None
+
+    def transcribe_file2(self, audio_file):
+        """语音识别单个音频文件"""
+        if not self.whisper_model:
+            logger.error("Whisper模型未加载，无法进行语音识别")
+            return None
+        
+        start_time = time.time()
+        try:
+            # 使用Whisper模型进行转录
+            result = self.whisper_model.transcribe(
+                audio_file,
+                language="zh",
+                fp16=False
+            )
+            # 获取转录文本
+            text = result.get("text", "").strip()
+            # 记录处理时间
+            duration = time.time() - start_time
+            logger.info(f"语音识别耗时: {duration:.2f}秒")
+            if text:
+                logger.info(f"语音识别结果: {text}")
+                return text
+            else:
+                logger.info("语音识别结果为空")
+                return None
+                
+        except Exception as e:
+            logger.error(f"语音识别失败: {e}")
+            return None
+                        

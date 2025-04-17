@@ -13,6 +13,7 @@ import struct
 import random
 import wave
 import traceback
+import pydub
 from datetime import datetime
 import concurrent.futures
 
@@ -81,11 +82,10 @@ class SIPCall(pj.Call):
         self.audio_recorder = None
         self.transcriber = WhisperTranscriber(whisper_model)
         self.player = None
-        self.last_size = 0
-        self.last_transcription_time = time.time()
-        self.min_chunk_size = 8000  # 至少8KB新数据才处理
-        self.segment_count = 0
-        self.all_transcription = ''
+        self.chunks_size = 0     # 已保存的音频段数量
+        self.process_count = 0   # 转录过的音频段数量
+        self.talk_list = list()  # 对话列表
+        self.process_talk = 0    # 处理过的对话数量
         # 通话结果数据
         self.call_result = {
             'phone_number': phone_number,
@@ -216,7 +216,6 @@ class SIPCall(pj.Call):
         """处理转录结果的回调函数"""
         if text:
             logger.info(f"收到转录结果: {text}")
-            
             # 使用ResponseManager获取回复
             if self.response_manager:
                 response_text = self.response_manager.get_response(text)
@@ -400,56 +399,87 @@ class SIPCall(pj.Call):
         except:
             return False
 
-    def voice_check(self):
-        # 实时转录逻辑
-        recording_file = self.recording_file
-        if recording_file and os.path.exists(recording_file) and self.whisper_model:
-            # 获取当前文件大小
-            current_size = os.path.getsize(recording_file)
-            # 如果文件有显著增长，处理新数据
-            size_diff = current_size - self.last_size
-            if size_diff > self.min_chunk_size:
-                self.segment_count += 1
-                logger.info(f"检测到录音文件增长: 段{self.segment_count}, {self.last_size} -> {current_size} 字节 (+{size_diff}字节)")
-                
-                # 确保有足够的间隔让Whisper处理数据
-                time_since_last = time.time() - self.last_transcription_time
-                if time_since_last < 1.0:
-                    time.sleep(1.0 - time_since_last)
-                # 处理新的音频段
-                new_size = self.process_audio_chunk( current_size)
-                
-                # 更新时间和大小
-                self.last_transcription_time = time.time()
-                if new_size is not None:
-                    self.last_size = new_size
-                else:
-                    self.last_size = current_size
+    def is_last_chunk_complete(self, audio, last_chunk, min_silence_len=1000, silence_thresh=-50):
+        # 获取末尾500ms片段（避免漏检短静音）
+        end_segment = audio[-500:] 
+        silent_ranges = pydub.silence.detect_silence(
+            end_segment, 
+            min_silence_len=min_silence_len,  # 降低检测阈值
+            silence_thresh=silence_thresh
+        )
+        return len(silent_ranges) > 0  # 存在静音段则判定完整
 
-    def process_audio_chunk(self, current_size):
+
+    def voice_check(self):
+        # 语音分段逻辑,将录音文件分段,每段至少800ms,每段结束时计算RMS值,如果低于-50 dBFS阈值,认为是静音,则保存该段,否则停止分段
+        recording_file = self.recording_file
+        if not (recording_file and os.path.exists(recording_file) and self.whisper_model):
+            return
+
+        min_silence_len = 800
+        silence_thresh = -50
+        audio = pydub.AudioSegment.from_wav(recording_file)
+        chunks = pydub.silence.split_on_silence(audio, 
+            min_silence_len=min_silence_len,
+            silence_thresh=silence_thresh,
+            keep_silence=min_silence_len
+        )
+
+        chunks_size = self.chunks_size
+        for i in range(chunks_size, len(chunks)):
+            chunk = chunks[i]
+
+            # 如果最后一段小于800ms,则表示话没说完,不保存分段
+            if i == len(chunks) - 1:
+                if len(chunk) < min_silence_len:
+                    break
+                # 获取最后800ms的音频段
+                last_ms = chunk[-min_silence_len:]
+                # 计算最后的RMS值(均方根，表示音量大小)
+                rms = last_ms.rms
+                # 将RMS值转换为dBFS (分贝全刻度)
+                dbfs = 20 * math.log10(rms / 32768) if rms > 0 else -100
+                # 如果低于-50 dBFS阈值，认为是静音
+                if dbfs >= silence_thresh:
+                    break
+
+            base_name, ext = os.path.splitext(recording_file)
+            chunk_file = f"{base_name}_{i}{ext}"
+            chunk.export(chunk_file, format="wav")
+            self.chunks_size += 1
+            logger.info(f"录音文件第: {self.chunks_size} 段")
+
+    def process_audio_chunk(self):
         """处理录音文件的新增数据块"""
+        if self.process_count >= self.chunks_size:
+            return
+
+        new_talk = ''
         try:
-            processed_file = self.recording_file
+            base_name, ext = os.path.splitext(self.recording_file)
+            chunk_file = f"{base_name}_{self.process_count}{ext}"
             # 检查预处理文件
-            if os.path.exists(processed_file) and os.path.getsize(processed_file) > 1000:
+            if os.path.exists(chunk_file):
                 # 转录处理
-                new_text = self.transcriber.transcribe_file(processed_file, self.segment_count)
-                if new_text!= self.all_transcription:
-                    # 去掉原来已处理过的文本
-                    text = new_text.replace(self.all_transcription, "", 1)
-                    self.all_transcription = new_text
-                    # 如果成功识别到文本，调用回调
-                    if text and text != '':
-                        # 如果提供了转录结果回调函数，调用它
-                        self.response_callback(text)
-            else:
-                logger.warning(f"预处理后的音频文件过小或不存在: {processed_file}")
-        
-            return current_size
+                new_talk = self.transcriber.transcribe_file2(chunk_file)
         except Exception as e:
             logger.error(f"处理音频块失败: {e}")
             logger.error(f"详细错误: {traceback.format_exc()}")
-            return None
+        finally:
+            self.talk_list.append(new_talk)
+            self.process_count += 1
+
+    def process_talk_list(self):
+        """处理对话列表"""
+        process_talk = self.process_talk 
+        if process_talk >= len(self.talk_list):
+            return
+        for i in range(process_talk, len(self.talk_list)):
+            self.process_talk+=1
+            talk = self.talk_list[i]
+            # 如果成功识别到文本，调用回调
+            if talk and talk != '':
+                self.response_callback(talk)
 
 
 class SIPCaller:
@@ -527,11 +557,11 @@ class SIPCaller:
 
     def make_call(self, number, voice_file=None):
         """拨打电话"""
-        try:
-            if self.current_call:
-                logger.warning("已有通话在进行中")
-                return False
+        if self.current_call:
+            logger.warning("已有通话在进行中")
+            return None
 
+        try:
             # 清理数据
             self.phone_number = number.strip()
             logger.info(f"=== 开始拨号 ===")
@@ -550,7 +580,7 @@ class SIPCaller:
             
             # 设置呼叫参数
             call_param = pj.CallOpParam(True)
-            
+
             # 发送拨号请求
             logger.info(f"发送拨号请求: {sip_uri}")
             call.makeCall(sip_uri, call_param)
@@ -558,16 +588,12 @@ class SIPCaller:
             # 更新当前通话
             self.current_call = call
             self.phone_number = number
-            
-            logger.info("拨号请求已发送")
-            logger.info("等待呼叫状态变化...")
-            
-            return True
-            
+            logger.info("拨号请求已发送,等待呼叫状态变化...")
+            return call
         except Exception as e:
             logger.error(f"拨打电话失败: {e}")
             logger.error(f"详细错误: {traceback.format_exc()}")
-            return False
+            return None
 
     def hangup(self):
         """挂断当前通话"""

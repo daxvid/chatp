@@ -160,17 +160,6 @@ def prepare_call_list(call_manager, call_list_file):
         logger.error(f"详细错误: {traceback.format_exc()}")
         return None
 
-def setup_transcription_env():
-    """设置实时转录所需的环境"""
-    try:
-        segment_dir = "segments"
-        os.makedirs(segment_dir, exist_ok=True)
-        return segment_dir
-    except Exception as e:
-        logger.error(f"设置转录环境失败: {e}")
-        logger.error(f"详细错误: {traceback.format_exc()}")
-        return "segments"  # 返回默认值
-
 def check_call_state(sip_caller):
     """检查通话状态"""
     try:
@@ -212,8 +201,6 @@ def wait_for_call_completion(call_manager, whisper_manager, timeout=180):
     call_start_time = time.time()
     last_transcription_count = 0
     
-    # 实时转录相关变量
-    segment_dir = setup_transcription_env()
     
     while sip_caller.current_call and sip_caller.current_call.isActive():
         # 检查退出请求

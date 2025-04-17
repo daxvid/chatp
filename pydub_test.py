@@ -5,9 +5,9 @@ from datetime import datetime
 start_time = datetime.now()
 audio = AudioSegment.from_wav("recordings/input.wav")
 chunks = split_on_silence(audio, 
-    min_silence_len=1000,
+    min_silence_len=800,
     silence_thresh=-50,
-    keep_silence=200
+    keep_silence=800
 )
 
 for i, chunk in enumerate(chunks):

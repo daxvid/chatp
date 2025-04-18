@@ -579,7 +579,7 @@ class SIPCaller:
                     voice_file = self.tts_manager.generate_tts_sync(response_text)
                     
                     if voice_file:
-                        if self.tts_manager.is_from_cache(response_text, voice_name):
+                        if self.tts_manager.is_from_cache(response_text):
                             logger.debug(f"使用缓存的TTS文件: {os.path.basename(voice_file)}")
                             cache_count += 1
                         else:

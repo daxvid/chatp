@@ -403,8 +403,8 @@ class SIPCall(pj.Call):
         if not (recording_file and os.path.exists(recording_file)):
             return
         file_size = os.path.getsize(recording_file)
-        if file_size < 16*1024: 
-            logger.info(f"录音文件太小{file_size}字节, 不进行处理: {recording_file}")
+        if file_size < 8*1024: 
+            # logger.info(f"录音文件太小{file_size}字节, 不进行处理: {recording_file}")
             return
 
         start_time = datetime.now()

@@ -41,7 +41,6 @@ class TTSManager:
             
             # 如果已经生成过，直接返回
             if os.path.exists(wav_path):
-                logger.info(f"使用缓存的TTS文件: {os.path.basename(wav_path)}")
                 # 记录缓存命中
                 self.cache_hits.add(wav_path)
                 # 更新最近文件记录
@@ -57,7 +56,7 @@ class TTSManager:
             temp_audio = os.path.join(self.cache_dir, f"{os.path.basename(wav_path)}_temp.mp3")
             
             # 生成语音
-            logger.info(f"正在使用edge-tts生成语音: '{text[:30]}...'")
+            logger.info(f"正在生成语音: '{text[:30]}...'")
             communicate = edge_tts.Communicate(text, voice)
             
             # 直接生成WAV格式音频
@@ -84,7 +83,7 @@ class TTSManager:
                 except Exception as e:
                     logger.warning(f"无法删除临时文件: {e}")
                 
-                logger.info(f"WAV格式生成成功: {os.path.basename(wav_path)}")
+                logger.info(f"语音生成成功: {os.path.basename(wav_path)}")
                 
                 # 记录新生成的文件
                 self.newly_generated.add(wav_path)
@@ -96,7 +95,7 @@ class TTSManager:
                     'time': datetime.now()
                 }
             except Exception as e:
-                logger.error(f"WAV格式生成失败: {e}")
+                logger.error(f"语音生成失败: {e}")
                 logger.error(f"详细错误: {traceback.format_exc()}")
                 return None
             

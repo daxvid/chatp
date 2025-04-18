@@ -1,10 +1,14 @@
 import pydub
 from datetime import datetime
 
+from fix_wav_in_place import fix_wav_file_in_place
+
 min_silence_len = 700
 silence_thresh = -60
 start_time = datetime.now()
-audio = pydub.AudioSegment.from_wav("recordings/input.wav")
+file = "recordings/13382344636_20250418_151033_tmp.wav"
+fix_wav_file_in_place(file)
+audio = pydub.AudioSegment.from_wav(file)
 chunks = pydub.silence.split_on_silence(audio, 
     min_silence_len=min_silence_len,
     silence_thresh=silence_thresh,

@@ -245,7 +245,7 @@ class SIPCall(pj.Call):
 
             # 创建第一个临时文件，在扩展名前加sm
             timestamp = datetime.now().strftime("_%H%M%S")
-            base_n, ext = os.path.splitext(audio_file)
+            base_name, ext = os.path.splitext(audio_file)
             temp_file = f"{base_name}{timestamp}.sm{ext}"
             loggerfo(f"开始语音识别: {temp_file}")
             if os.h.exists(temp_file):

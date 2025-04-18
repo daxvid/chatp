@@ -123,7 +123,7 @@ class CallManager:
             self.call_results.append(failed_result)
             
             # 确保通话已结束
-            if hasattr(self, 'sip_caller') and self.sip_caller and self.sip_caller.current_call:
+            if self.sip_caller and self.sip_caller.current_call:
                 self.sip_caller.hangup()
             
             return failed_result

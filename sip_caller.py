@@ -80,8 +80,8 @@ class SIPCall(pj.Call):
         self.tts_manager = None
         self.response_manager = None
         self.audio_media = None
-        self.ep = None
         self.audio_recorder = None
+        self.ep = None
         self.player = None
         self.chunks_size = 0     # 已保存的音频段数量
         self.file_list = list()  # 已分段的对话文件列表
@@ -247,9 +247,9 @@ class SIPCall(pj.Call):
             timestamp = datetime.now().strftime("_%H%M%S")
             base_name, ext = os.path.splitext(audio_file)
             temp_file = f"{base_name}{timestamp}.sm{ext}"
-            loggerfo(f"开始语音识别: {temp_file}")
-            if os.h.exists(temp_file):
-                osmove(temp_file)
+            logger.info(f"开始语音识别: {temp_file}")
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
             # 使用ffg去掉静音
             # ffmp-i input.wav -af silenceremove=stop_periods=-1:stop_duration=0.5:stop_threshold=-50dB output.wav
             ffmpegmmand = f"ffmpeg -i {audio_file} -af silenceremove=stop_periods=-1:stop_duration=0.5:stop_threshold=-50dB {temp_file}"
@@ -316,9 +316,8 @@ class SIPCall(pj.Call):
                 
                 # 停止音频传输
                 try:
-                    if hasattr(self, 'audio_media') and self.audio_media:
-                        if hasattr(self, 'audio_recorder') and self.audio_recorder:
-                            self.audio_media.stopTransmit(self.audio_recorder)
+                    if self.audio_media and self.audio_recorder:
+                        self.audio_media.stopTransmit(self.audio_recorder)
                 except Exception as e:
                     logger.error(f"停止音频传输时出错: {e}")
                 
@@ -335,7 +334,7 @@ class SIPCall(pj.Call):
                         logger.warning("无法获取转录结果")
                 
                 # 更新录音文件路径
-                if hasattr(self, 'recording_file') and self.recording_file:
+                if self.recording_file:
                     self.call_result['recording'] = self.recording_file
                     
                 logger.info("通话已挂断")
@@ -390,18 +389,6 @@ class SIPCall(pj.Call):
             logger.error(f"播放响应过程中出错: {e}")
             logger.error(f"详细错误: {traceback.format_exc()}")
             return False
-
-        """获取转录结果，供main.py循环调用"""
-        try:
-            if hasattr(self, 'transcription_results') and self.transcription_results:
-                return self.transcription_results
-            else:
-                # 如果尚未初始化，创建一个空列表
-                self.transcription_results = []
-                return self.transcription_results
-        except Exception as e:
-            logger.error(f"获取转录结果失败: {e}")
-            return []
 
     def is_active(self):
         """检查通话是否活跃"""
@@ -477,23 +464,31 @@ class SIPCall(pj.Call):
         if process_talk >= len(self.file_list):
             return
             
-        for i in range(process_talk, len(self.file_list)):
-            chunk_file = self.file_list[i]
-            # 获取转录结果，如果可用
-            if self.whisper_manager.is_transcription_complete(chunk_file):
-                talk = ''
-                try:
-                    result = self.whisper_manager.get_result(chunk_file)
-                    if result:
-                        talk = result.get("text", "").strip()
-                        # 如果成功识别到文本，调用回调
-                        if talk and talk != '':
-                            self.response_callback(talk)
-                except Exception as e:
-                    logger.error(f"获取异步转录结果失败: {e}")
-                finally:
-                    logger.info(f"获取到音频段 {i+1} 的转录结果: {talk[:30]}...")
-                    self.talk_list.append(talk)
+        chunk_file = self.file_list[process_talk]
+        # 检查转录结果是否可用
+        if not self.whisper_manager.is_transcription_complete(chunk_file):
+            return
+
+        talk = ''
+        try:
+            result = self.whisper_manager.get_result(chunk_file)
+            if result:
+                talk = result.get("text", "").strip()
+
+            if len(self.talk_list) == 0:
+                # 如果是第一次，则播放欢迎语
+                self.response_callback("播-放-开-场-欢-迎-语")
+            else:
+                # 如果成功识别到文本，调用回调
+                if talk and talk != '':
+                    self.response_callback(talk)
+                else:
+                    self.response_callback("播-放-下-载-地-址")
+        except Exception as e:
+            logger.error(f"获取异步转录结果失败: {e}")
+        finally:
+            self.talk_list.append(talk)
+            logger.info(f"获取到音频段 {i+1} 的转录结果: {talk[:30]}...")
 
 class SIPCaller:
     """SIP呼叫管理类"""

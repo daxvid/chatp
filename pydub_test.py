@@ -1,13 +1,14 @@
-from pydub import AudioSegment
-from pydub.silence import split_on_silence
+import pydub
 from datetime import datetime
 
+min_silence_len = 700
+silence_thresh = -60
 start_time = datetime.now()
-audio = AudioSegment.from_wav("recordings/input.wav")
-chunks = split_on_silence(audio, 
-    min_silence_len=800,
-    silence_thresh=-50,
-    keep_silence=800
+audio = pydub.AudioSegment.from_wav("recordings/input.wav")
+chunks = pydub.silence.split_on_silence(audio, 
+    min_silence_len=min_silence_len,
+    silence_thresh=silence_thresh,
+    keep_silence=min_silence_len
 )
 
 for i, chunk in enumerate(chunks):

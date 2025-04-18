@@ -59,7 +59,6 @@ def load_configuration():
     try:
         config_manager = ConfigManager('config.yaml')
         sip_config = config_manager.get_sip_config()
-        tts_config = config_manager.get_tts_config()
         call_list_file = config_manager.get_call_list_file()
         call_log_file = config_manager.get_call_log_file()
         
@@ -75,7 +74,6 @@ def load_configuration():
         return {
             'config_manager': config_manager,
             'sip_config': sip_config,
-            'tts_config': tts_config,
             'call_list_file': call_list_file,
             'call_log_file': call_log_file
         }
@@ -313,11 +311,6 @@ def main():
         # 准备呼叫列表
         call_list = prepare_call_list(services['call_manager'], config['call_list_file'])
         if call_list is None:
-            return
-        
-        # 检查TTS文本是否设置
-        if not config['tts_config']['text']:
-            logger.error("未设置TTS文本，请在配置文件中添加tts_text字段")
             return
         
         # 处理电话号码列表

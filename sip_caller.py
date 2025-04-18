@@ -223,8 +223,7 @@ class SIPCall(pj.Call):
                     # 使用TTS生成语音
                     if self.tts_manager:
                         # 生成TTS文件
-                        voice_name = "zh-CN-XiaoxiaoNeural"  # 默认语音
-                        voice_file = self.tts_manager.generate_tts_sync(response_text, voice_name)
+                        voice_file = self.tts_manager.generate_tts_sync(response_text)
                         if voice_file and os.path.exists(voice_file):
                             self.play_response_direct(voice_file)
                         else:
@@ -486,17 +485,20 @@ class SIPCaller:
         self.acc = None
         self.current_call = None
         self.phone_number = None
+        self.whisper_manager = whisper_manager
         
         # 初始化ResponseManager
         self.response_manager = ResponseManager(yaml_file="response.yaml")
         
         # 初始化TTS管理器
         self.tts_manager = tts_manager
-        self.whisper_manager = whisper_manager
         
         # 初始化PJSIP
         self._init_pjsua2()
-
+        
+        # 预先生成所有可能回复的语音文件
+        self._pregenerate_tts_responses()
+        
     def _init_pjsua2(self):
         """初始化PJSIP"""
         try:
@@ -550,6 +552,53 @@ class SIPCaller:
         except pj.Error as e:
             logger.error(f"初始化PJSIP失败: {e}")
             raise
+
+    def _pregenerate_tts_responses(self):
+        """预先生成所有可能回复的语音文件"""
+        try:
+            logger.info("开始预生成所有可能回复的语音文件...")
+            
+            # 获取所有可能的回复内容
+            all_responses = self.response_manager.get_all_possible_responses()
+            
+            if not all_responses:
+                logger.warning("未找到可能的回复内容，跳过预生成语音文件")
+                return
+                
+            logger.info(f"找到 {len(all_responses)} 条可能的回复内容")
+            
+            # 计数器
+            success_count = 0
+            fail_count = 0
+            cache_count = 0
+            
+            # 生成所有回复的语音文件
+            for response_text in all_responses:
+                try:
+                    # 使用TTSManager生成语音
+                    voice_file = self.tts_manager.generate_tts_sync(response_text)
+                    
+                    if voice_file:
+                        if self.tts_manager.is_from_cache(response_text, voice_name):
+                            logger.debug(f"使用缓存的TTS文件: {os.path.basename(voice_file)}")
+                            cache_count += 1
+                        else:
+                            logger.debug(f"生成TTS文件成功: {os.path.basename(voice_file)}")
+                            success_count += 1
+                    else:
+                        logger.warning(f"生成TTS文件失败: {response_text[:30]}...")
+                        fail_count += 1
+                except Exception as e:
+                    logger.error(f"生成TTS文件时出错: {e}")
+                    fail_count += 1
+            
+            logger.info(f"TTS预生成完成: 成功 {success_count} 个, 使用缓存 {cache_count} 个, 失败 {fail_count} 个")
+            
+        except Exception as e:
+            logger.error(f"预生成TTS回复时出错: {e}")
+            logger.error(f"详细错误: {traceback.format_exc()}")
+    
+
 
     def make_call(self, number):
         """拨打电话"""
@@ -630,23 +679,3 @@ class SIPCaller:
             logger.error(f"停止SIP服务失败: {e}")
             self.acc = None
             self.ep = None
-
-        
-    def _load_response_configs(self):
-        """加载回复配置"""
-        try:
-            # 尝试从config中读取回复规则
-            response_configs = {}
-                
-            # 默认回复
-
-                
-            return response_configs
-            
-        except Exception as e:
-            logger.error(f"加载回复配置失败: {e}")
-            # 返回一个包含默认配置的字典
-            return {
-                'default_response': "谢谢您的来电，我们已收到您的信息。",
-                'tts_voice': "zh-CN-XiaoxiaoNeural"
-            } 

@@ -24,21 +24,6 @@ class ConfigManager:
     def get_sip_config(self):
         """获取SIP配置"""
         return self.config.get('sip', {})
-        
-    def get_tts_config(self):
-        """获取TTS配置"""
-        return {
-            'text': self.config.get('sip', {}).get('tts_text', ''),
-            'voice': self.config.get('sip', {}).get('tts_voice', 'zh-CN-XiaoxiaoNeural')
-        }
-        
-    def get_voice_file(self):
-        """获取语音文件路径"""
-        return self.config.get('sip', {}).get('voice_file', '')
-        
-    def get_target_number(self):
-        """获取目标号码"""
-        return self.config.get('sip', {}).get('target_number', '')
 
     def get_call_list_file(self):
         """获取电话号码列表文件"""

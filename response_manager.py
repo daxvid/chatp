@@ -71,6 +71,27 @@ class ResponseManager:
                 return False
                 
         return True
+
+    def get_all_possible_responses(self):
+        """获取所有可能的回复内容"""
+        try:
+            all_responses = []
+            
+            # 从ResponseManager获取所有回复规则
+            rules = self.response_data.get('rules', [])
+            for rule in rules:
+                responses = rule.get('responses', [])
+                if isinstance(responses, list):
+                    all_responses.extend([resp for resp in responses if isinstance(resp, str) and resp.strip()])
+            
+            # 去重
+            all_responses = list(set(all_responses))
+            return all_responses
+            
+        except Exception as e:
+            logger.error(f"获取所有可能回复时出错: {e}")
+            logger.error(f"详细错误: {traceback.format_exc()}")
+            return []
         
     def get_response(self, text):
         """

@@ -51,8 +51,6 @@ sip:
   username: "your_username"      # SIP账户用户名
   password: "your_password"      # SIP账户密码
   bind_port: 5060                # 本地绑定端口
-  tts_text: "您好，这是一个自动语音通知..." # 要播放的文本
-  tts_voice: "zh-CN-XiaoxiaoNeural" # 语音合成声音
 
 call:
   list_file: "tel.txt"           # 电话号码列表

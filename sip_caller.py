@@ -421,7 +421,6 @@ class SIPCall(pj.Call):
             return
         file_size = os.path.getsize(recording_file)
         if file_size < 8*1024: 
-            # logger.info(f"录音文件太小{file_size}字节, 不进行处理: {recording_file}")
             return
 
         start_time = datetime.now()
@@ -429,46 +428,48 @@ class SIPCall(pj.Call):
         temp_file = f"{base_name}_tmp{ext}"
         if os.path.exists(temp_file):
             os.remove(temp_file)
-
         shutil.copy(recording_file, temp_file)
-        fix_wav_file_in_place(temp_file)
-        audio = pydub.AudioSegment.from_wav(temp_file)
 
-        min_silence_len = 800
-        silence_thresh = -50
-        chunks = pydub.silence.split_on_silence(audio, 
-            min_silence_len=min_silence_len,
-            silence_thresh=silence_thresh,
-            keep_silence=min_silence_len
-        )
+        try:
+            fix_wav_file_in_place(temp_file)
+            audio = pydub.AudioSegment.from_wav(temp_file)
+            min_silence_len = 800
+            silence_thresh = -50
+            chunks = pydub.silence.split_on_silence(audio, 
+                min_silence_len=min_silence_len,
+                silence_thresh=silence_thresh,
+                keep_silence=min_silence_len
+            )
 
-        chunks_size = self.chunks_size
-        if len(chunks) <= chunks_size:
-            return
-        
-        logger.info(f"时长:{len(audio)/1000}秒, 共:{len(chunks)} 段, 已处理{self.chunks_size},文件:{temp_file}")
-        for i in range(chunks_size, len(chunks)):
-            chunk = chunks[i]
-            # 如果最后一段小于800ms,则表示话没说完,不保存分段
-            if i == len(chunks) - 1:
-                if len(chunk) < min_silence_len:
-                    break
-                # 获取最后800ms的音频段
-                last_ms = chunk[-min_silence_len:]
-                # 计算最后的RMS值(均方根，表示音量大小)
-                rms = last_ms.rms
-                # 将RMS值转换为dBFS (分贝全刻度)
-                dbfs = 20 * math.log10(rms / 32768) if rms > 0 else -100
-                # 如果低于-50 dBFS阈值，认为是静音
-                if dbfs >= silence_thresh:
-                    break
+            chunks_size = self.chunks_size
+            if len(chunks) <= chunks_size:
+                return
+            
+            logger.info(f"时长:{len(audio)/1000}秒, 共:{len(chunks)} 段, 已处理{self.chunks_size},文件:{temp_file}")
+            for i in range(chunks_size, len(chunks)):
+                chunk = chunks[i]
+                # 如果最后一段小于800ms,则表示话没说完,不保存分段
+                if i == len(chunks) - 1:
+                    if len(chunk) < min_silence_len:
+                        break
+                    # 获取最后800ms的音频段
+                    last_ms = chunk[-min_silence_len:]
+                    # 计算最后的RMS值(均方根，表示音量大小)
+                    rms = last_ms.rms
+                    # 将RMS值转换为dBFS (分贝全刻度)
+                    dbfs = 20 * math.log10(rms / 32768) if rms > 0 else -100
+                    # 如果低于-50 dBFS阈值，认为是静音
+                    if dbfs >= silence_thresh:
+                        break
 
-            chunk_file = f"{base_name}_{i}{ext}"
-            chunk.export(chunk_file, format="wav")  
-            logger.info(f"保存录音文件: {chunk_file}")
-            self.chunks_size += 1
-            self.file_list.append(chunk_file)
-            self.whisper_manager.transcribe(chunk_file)
+                chunk_file = f"{base_name}_{i}{ext}"
+                chunk.export(chunk_file, format="wav")  
+                logger.info(f"保存录音文件: {chunk_file}")
+                self.chunks_size += 1
+                self.file_list.append(chunk_file)
+                self.whisper_manager.transcribe(chunk_file)
+        finally:
+            os.remove(temp_file)
 
     def process_file_list(self):
         """处理对话列表"""

@@ -5,7 +5,7 @@ import logging
 logger = logging.getLogger("config")
 
 class ConfigManager:
-    def __init__(self, config_path='config.yaml'):
+    def __init__(self, config_path='conf/config.yaml'):
         """配置管理器"""
         self.config_path = config_path
         self.config = self._load_config()
@@ -27,8 +27,8 @@ class ConfigManager:
 
     def get_call_list_file(self):
         """获取电话号码列表文件"""
-        return self.config.get('call', {}).get('list_file', 'tel.txt')
+        return self.config.get('call', {}).get('list_file', 'conf/tel.txt')
     
     def get_call_log_file(self):
         """获取呼叫日志文件"""
-        return self.config.get('call', {}).get('log_file', 'call_log.csv') 
+        return self.config.get('call', {}).get('log_file', 'log/call_log.csv') 

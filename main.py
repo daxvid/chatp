@@ -26,7 +26,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("auto_caller.log", encoding='utf-8'),
+        logging.FileHandler("log/auto_caller.log", encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
@@ -57,7 +57,7 @@ signal.signal(signal.SIGTERM, signal_handler)
 def load_configuration():
     """加载配置文件"""
     try:
-        config_manager = ConfigManager('config.yaml')
+        config_manager = ConfigManager('conf/config.yaml')
         sip_config = config_manager.get_sip_config()
         call_list_file = config_manager.get_call_list_file()
         call_log_file = config_manager.get_call_log_file()
@@ -121,20 +121,6 @@ def initialize_services(sip_config):
         }
     except Exception as e:
         logger.error(f"初始化服务失败: {e}")
-        logger.error(f"详细错误: {traceback.format_exc()}")
-        return None
-
-def generate_tts_voice(call_manager, tts_config):
-    """生成TTS语音文件"""
-    try:
-        logger.info(f"生成语音: '{tts_config['text'][:30]}...'")
-        wav_file = call_manager.tts_manager.generate_tts_sync(tts_config['text'], tts_config['voice'])
-        if not wav_file:
-            logger.error("TTS语音生成失败，无法拨打电话")
-            return None
-        return wav_file
-    except Exception as e:
-        logger.error(f"生成TTS语音失败: {e}")
         logger.error(f"详细错误: {traceback.format_exc()}")
         return None
 

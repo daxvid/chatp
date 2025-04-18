@@ -14,6 +14,7 @@ import random
 import wave
 import traceback
 import pydub
+import subprocess
 from datetime import datetime
 import concurrent.futures
 
@@ -236,9 +237,25 @@ class SIPCall(pj.Call):
                 logger.info(f"ResponseManager未初始化")
 
     def transcribe_audio(self):
-        """使用Whisper转录录音文件"""
         try:    
-            result = self.whisper_manager.transcribe_and_wait_result(self.recording_file)
+            audio_file = self.recording_file
+            if not os.path.exists(audio_file):
+                logger.error(f"录音文件不存在: {audio_file}")
+                return None
+
+            # 创建第一个临时文件，在扩展名前加sm
+            timestamp = datetime.now().strftime("_%H%M%S")
+            base_n, ext = os.path.splitext(audio_file)
+            temp_file = f"{base_name}{timestamp}.sm{ext}"
+            loggerfo(f"开始语音识别: {temp_file}")
+            if os.h.exists(temp_file):
+                osmove(temp_file)
+            # 使用ffg去掉静音
+            # ffmp-i input.wav -af silenceremove=stop_periods=-1:stop_duration=0.5:stop_threshold=-50dB output.wav
+            ffmpegmmand = f"ffmpeg -i {audio_file} -af silenceremove=stop_periods=-1:stop_duration=0.5:stop_threshold=-50dB {temp_file}"
+            subprocess.run(ffmpeg_command, shell=True, check=True)
+
+            result = self.whisper_manager.transcribe_and_wait_result(temp_file)
             if result:
                 return result.get("text", "").strip()
             else:
@@ -488,7 +505,7 @@ class SIPCaller:
         self.whisper_manager = whisper_manager
         
         # 初始化ResponseManager
-        self.response_manager = ResponseManager(yaml_file="response.yaml")
+        self.response_manager = ResponseManager(yaml_file="conf/response.yaml")
         
         # 初始化TTS管理器
         self.tts_manager = tts_manager
@@ -580,10 +597,8 @@ class SIPCaller:
                     
                     if voice_file:
                         if self.tts_manager.is_from_cache(response_text):
-                            logger.debug(f"使用缓存的TTS文件: {os.path.basename(voice_file)}")
                             cache_count += 1
                         else:
-                            logger.debug(f"生成TTS文件成功: {os.path.basename(voice_file)}")
                             success_count += 1
                     else:
                         logger.warning(f"生成TTS文件失败: {response_text[:30]}...")

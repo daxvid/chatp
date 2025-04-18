@@ -53,8 +53,8 @@ sip:
   bind_port: 5060                # 本地绑定端口
 
 call:
-  list_file: "tel.txt"           # 电话号码列表
-  log_file: "call_log.csv"       # 呼叫记录日志
+  list_file: "conf/tel.txt"           # 电话号码列表
+  log_file: "log/call_log.csv"       # 呼叫记录日志
   interval: 5                    # 两次呼叫间隔(秒)
 
 whisper:
@@ -81,8 +81,8 @@ python main.py --response-file path/to/response.wav
 
 3. 查看结果：
    - 录音文件保存在`recordings`目录
-   - 呼叫记录保存在`call_log.csv`文件中
-   - 日志保存在`auto_caller.log`文件中
+   - 呼叫记录保存在`log/call_log.csv`文件中
+   - 日志保存在`log/auto_caller.log`文件中
 
 ## 项目结构
 
@@ -94,8 +94,8 @@ auto-caller/
 ├── tts_manager.py         # 文本转语音模块
 ├── whisper_manager.py     # 语音识别模块
 ├── call_manager.py        # 呼叫管理模块
-├── config.yaml            # 配置文件
-├── tel.txt                # 电话号码列表
+├── conf/config.yaml       # 配置文件
+├── conf/tel.txt           # 电话号码列表
 ├── requirements.txt       # 依赖列表
 ├── README.md              # 说明文档
 ├── recordings/            # 录音文件目录

@@ -11,8 +11,8 @@ sip:
   #bind_port: 5060、
 
 call:
-  list_file: "tel.txt"  # 电话号码列表文件，每行一个号码
-  log_file: "call_log.csv"  # 呼叫记录日志
+  list_file: "conf/tel.txt"      # 电话号码列表文件，每行一个号码
+  log_file: "log/call_log.csv"   # 呼叫记录日志
   interval: 5  # 两次呼叫之间的间隔时间(秒)
 
 whisper:

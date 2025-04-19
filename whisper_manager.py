@@ -103,7 +103,7 @@ class WhisperManager:
             result = self.model.transcribe(
                 audio_file,
                 language="zh",
-                fp16=False
+                fp16=True
             )
             duration = time.time() - start_time
             logger.info(f"转录完成({duration:.2f}秒): {result['text'][:50]}...")

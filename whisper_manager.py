@@ -56,7 +56,7 @@ class ThreadSafeDict:
             return key in self.cache
 
 class WhisperManager:
-    def __init__(self, model_size="small", model_dir="models/whisper", max_workers=3):
+    def __init__(self, model_size="turbo", model_dir="models/whisper", max_workers=3):
         """Whisper语音识别管理器"""
         self.model_size = model_size
         self.model_dir = Path(model_dir)

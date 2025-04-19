@@ -58,7 +58,7 @@ call:
   interval: 5                    # 两次呼叫间隔(秒)
 
 whisper:
-  model_size: "small"            # Whisper模型大小
+  model_size: "turbo"            # Whisper模型大小
   model_dir: "models/whisper"    # 模型保存目录
 ```
 

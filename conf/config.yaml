@@ -16,5 +16,5 @@ call:
   interval: 5  # 两次呼叫之间的间隔时间(秒)
 
 whisper:
-  model_size: "small"  # 可选: tiny, base, small, medium, large
+  model_size: "turbo"  # 可选: tiny, base, small, medium, large, turbo
   model_dir: "models/whisper"

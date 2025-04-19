@@ -252,7 +252,7 @@ class SIPCall(pj.Call):
                 os.remove(temp_file)
             # 使用ffg去掉静音
             # ffmp-i input.wav -af silenceremove=stop_periods=-1:stop_duration=0.5:stop_threshold=-50dB output.wav
-            ffmpegmmand = f"ffmpeg -i {audio_file} -af silenceremove=stop_periods=-1:stop_duration=0.5:stop_threshold=-50dB {temp_file}"
+            ffmpeg_command = f"ffmpeg -i {audio_file} -af silenceremove=stop_periods=-1:stop_duration=0.5:stop_threshold=-50dB {temp_file}"
             subprocess.run(ffmpeg_command, shell=True, check=True)
 
             result = self.whisper_manager.transcribe_and_wait_result(temp_file)

@@ -488,7 +488,7 @@ class SIPCall(pj.Call):
             logger.error(f"获取异步转录结果失败: {e}")
         finally:
             self.talk_list.append(talk)
-            logger.info(f"获取到音频段 {i+1} 的转录结果: {talk[:30]}...")
+            logger.info(f"获取到音频段 {len(self.talk_list)} 的转录结果: {talk[:30]}...")
 
 class SIPCaller:
     """SIP呼叫管理类"""

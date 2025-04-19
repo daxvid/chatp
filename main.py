@@ -36,6 +36,7 @@ logger = logging.getLogger("main")
 # 全局变量
 exit_event = Event()
 sip_caller = None
+services = None
 
 # 信号处理函数
 def signal_handler(sig, frame):
@@ -84,7 +85,7 @@ def load_configuration():
 
 def initialize_services(sip_config):
     """初始化TTS, Whisper和SIP服务"""
-    global sip_caller
+    global sip_caller, services
     
     try:
         # 初始化TTS引擎
@@ -94,6 +95,9 @@ def initialize_services(sip_config):
         # 初始化Whisper语音识别
         logger.info("初始化Whisper语音识别...")
         whisper_manager = WhisperManager()
+        if not whisper_manager:
+            logger.error("Whisper模型初始化失败")
+            return None
         
         # 初始化SIP客户端
         logger.info(f"初始化SIP客户端: {sip_config['server']}:{sip_config['port']}")
@@ -114,11 +118,14 @@ def initialize_services(sip_config):
         logger.info("初始化呼叫管理器...")
         call_manager = CallManager(sip_caller, tts_manager, whisper_manager)
         
-        return {
+        # 存储服务实例以便全局访问
+        services = {
             'tts_manager': tts_manager,
             'whisper_manager': whisper_manager,
             'call_manager': call_manager
         }
+        
+        return services
     except Exception as e:
         logger.error(f"初始化服务失败: {e}")
         logger.error(f"详细错误: {traceback.format_exc()}")
@@ -274,62 +281,50 @@ def cleanup_resources():
         logger.error(f"详细错误: {traceback.format_exc()}")
 
 def main():
-    """主程序入口"""
-    global sip_caller
+    """主程序入口点"""
+    global exit_event, services
+    
     try:
-        # 设置最详细的日志级别
-        logging.getLogger().setLevel(logging.DEBUG)
-        
-        logger.info("===== 自动电话呼叫系统启动 =====")
-        logger.info(f"Python版本: {sys.version}")
-        logger.info(f"操作系统: {os.name}, {sys.platform}")
-        
         # 加载配置
         config = load_configuration()
-        if config is None:
-            return
+        if not config:
+            logger.error("无法加载配置，程序退出")
+            return 1
+            
+        # 初始化信号处理
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
         
         # 初始化服务
         services = initialize_services(config['sip_config'])
-        if services is None:
-            return
-        
+        if not services:
+            logger.error("服务初始化失败，程序退出")
+            return 1
+            
+        call_manager = services['call_manager']
+        whisper_manager = services['whisper_manager']
+            
         # 准备呼叫列表
-        call_list = prepare_call_list(services['call_manager'], config['call_list_file'])
-        if call_list is None:
-            return
-        
-        # 处理电话号码列表
-        process_phone_list(
-            call_list, 
-            services['call_manager'], 
-            services['whisper_manager'], 
-            config['call_log_file'], 
-            config['sip_config']
-        )
-        
-        logger.info("===== 自动电话呼叫系统结束 =====")
+        call_list = prepare_call_list(call_manager, config['call_list_file'])
+        if not call_list:
+            logger.error("呼叫列表为空或加载失败，程序退出")
+            return 1
+            
+        # 处理电话列表
+        process_phone_list(call_list, call_manager, whisper_manager, 
+                           config['call_log_file'], config['sip_config'])
+            
+        logger.info("所有呼叫处理完成")
+        return 0
         
     except Exception as e:
         logger.error(f"程序运行出错: {e}")
-        logger.error(f"错误详情: {traceback.format_exc()}")
-    finally:
-        # 确保资源被正确清理
-        cleanup_resources()
-
-
-def init_whisper_model():
-    """初始化Whisper语音识别模型"""
-    try:
-        logger.info("正在加载Whisper模型(small)...")
-        import whisper
-        model = whisper.load_model("small")
-        logger.info("Whisper模型加载成功")
-        return model
-    except Exception as e:
-        logger.error(f"加载Whisper模型失败: {e}")
         logger.error(f"详细错误: {traceback.format_exc()}")
-        return None
+        return 1
+    finally:
+        # 清理资源
+        cleanup_resources()
+        logger.info("程序已退出")
 
 
 if __name__ == "__main__":

@@ -10,3 +10,5 @@ call_log.csv
 MicroSIP.txt
 MicroSIP.jpg
 /tts_cache
+conf/config.yaml
+conf/response.yaml

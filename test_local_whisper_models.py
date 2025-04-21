@@ -4,6 +4,7 @@ import os
 import logging
 from pathlib import Path
 import traceback
+import torch  # 添加torch导入
 
 # 配置日志
 logging.basicConfig(
@@ -15,6 +16,16 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger("whisper_test")
+
+# 检测CUDA是否可用
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+logger.info(f"使用设备: {DEVICE}")
+if DEVICE == "cuda":
+    gpu_name = torch.cuda.get_device_name(0)
+    logger.info(f"GPU型号: {gpu_name}")
+    # 显示GPU内存信息
+    gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+    logger.info(f"GPU内存: {gpu_memory:.2f} GB")
 
 def find_local_models(model_dir):
     """查找本地已有的Whisper模型"""
@@ -61,7 +72,7 @@ def main():
     for model_name in local_models:
         try:
             logger.info(f"加载 {model_name} 模型...")
-            model = whisper.load_model(model_name, download_root=model_dir)
+            model = whisper.load_model(model_name, device=DEVICE, download_root=model_dir)
             loaded_models[model_name] = model
             logger.info(f"{model_name} 模型加载成功")
         except Exception as e:
@@ -77,13 +88,28 @@ def main():
         logger.info(f"\n测试 {model_name} 模型转录性能...")
         
         try:
+            # 预热GPU（如果使用GPU）
+            if DEVICE == "cuda":
+                logger.info(f"GPU预热...")
+                # 简单运行一个小的转录任务预热GPU
+                _ = model.transcribe(audio_file, language="zh", fp16=True, duration=1.0)
+                torch.cuda.synchronize()  # 确保预热完成
+                logger.info(f"GPU预热完成")
+            
+            # 清理缓存
+            if DEVICE == "cuda":
+                torch.cuda.empty_cache()
+                
             # 只测量转录时间
             transcribe_start = time.time()
             result = model.transcribe(
                 audio_file,
                 language="zh",
-                fp16=True
+                fp16=True  # 启用半精度浮点数加速
             )
+            # 确保GPU操作完成
+            if DEVICE == "cuda":
+                torch.cuda.synchronize()
             transcribe_time = time.time() - transcribe_start
             
             # 显示结果

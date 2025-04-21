@@ -6,6 +6,7 @@ from pathlib import Path
 import traceback
 import urllib.request
 import ssl
+import torch  # 添加torch导入
 
 # 配置日志
 logging.basicConfig(
@@ -17,6 +18,13 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger("whisper_test")
+
+# 检测CUDA是否可用
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+logger.info(f"使用设备: {DEVICE}")
+if DEVICE == "cuda":
+    gpu_name = torch.cuda.get_device_name(0)
+    logger.info(f"GPU型号: {gpu_name}")
 
 # 禁用证书验证，解决可能的SSL问题
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -40,7 +48,7 @@ def load_model_with_retry(model_name, model_dir, max_retries=3):
     for attempt in range(max_retries):
         try:
             logger.info(f"加载 {model_name} 模型，尝试 {attempt+1}/{max_retries}...")
-            model = whisper.load_model(model_name, download_root=str(model_dir))
+            model = whisper.load_model(model_name, device=DEVICE, download_root=str(model_dir))
             logger.info(f"{model_name} 模型加载成功")
             return model
         except Exception as e:
@@ -111,7 +119,7 @@ def main():
             result = model.transcribe(
                 audio_file,
                 language="zh",
-                fp16=True
+                fp16=True,  # 启用半精度浮点数加速
             )
             transcribe_time = time.time() - transcribe_start
             

@@ -26,7 +26,7 @@ def test_whisper_model(model_name, audio_file):
         tuple: (转录结果, 加载时间, 转录时间)
     """
     # 创建模型目录
-    model_dir = Path("models/whisper")
+    model_dir = Path("../models/whisper")
     model_dir.mkdir(parents=True, exist_ok=True)
     
     # 记录模型加载开始时间
@@ -47,7 +47,7 @@ def test_whisper_model(model_name, audio_file):
 
 def main():
     # 测试音频文件
-    audio_file = "recordings/test.wav"
+    audio_file = "../recordings/test.wav"
     
     # 检查音频文件是否存在
     if not os.path.exists(audio_file):

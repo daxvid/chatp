@@ -67,7 +67,7 @@ def check_model_files(model_name, model_dir):
 def main():
     """测试不同Whisper模型的转录性能，只计算转录时间"""
     # 测试音频文件
-    audio_file = "recordings/test.wav"
+    audio_file = "../recordings/test.wav"
     
     # 检查音频文件是否存在
     if not os.path.exists(audio_file):

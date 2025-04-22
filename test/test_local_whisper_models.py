@@ -45,7 +45,7 @@ def find_local_models(model_dir):
 def main():
     """测试本地已有的Whisper模型的转录性能"""
     # 测试音频文件
-    audio_file = "recordings/test.wav"
+    audio_file = "../recordings/test.wav"
     
     # 检查音频文件是否存在
     if not os.path.exists(audio_file):
@@ -53,7 +53,7 @@ def main():
         return
     
     # 模型目录
-    model_dir = "models/whisper"
+    model_dir = "../models/whisper"
     
     # 查找本地模型
     local_models = find_local_models(model_dir)

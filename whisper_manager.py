@@ -5,59 +5,16 @@ import logging
 import threading
 import concurrent.futures
 import time
-from collections import OrderedDict
+import json
 import traceback
-import torch  # 添加torch导入
+import torch
+from redis_cache import RedisCache
 
 logger = logging.getLogger("whisper")
 
-class ThreadSafeDict:
-    """线程安全的字典实现"""
-    def __init__(self, max_size=100):
-        self.lock = threading.RLock()
-        self.cache = OrderedDict()
-        self.max_size = max_size
-        
-    def get(self, key, default=None):
-        """获取缓存值"""
-        with self.lock:
-            try:
-                value = self.cache.get(key, default)
-                return value
-            except Exception as e:
-                logger.error(f"获取缓存出错: {e}")
-                return default
-                
-    def set(self, key, value):
-        """设置缓存值"""
-        with self.lock:
-            try:
-                # 如果达到最大容量，移除最早的项
-                if len(self.cache) >= self.max_size:
-                    self.cache.popitem(last=False)
-                self.cache[key] = value
-            except Exception as e:
-                logger.error(f"设置缓存出错: {e}")
-                
-    def remove(self, key):
-        """移除缓存项"""
-        with self.lock:
-            try:
-                if key in self.cache:
-                    del self.cache[key]
-                    return True
-                return False
-            except Exception as e:
-                logger.error(f"移除缓存出错: {e}")
-                return False
-                
-    def has_key(self, key):
-        """检查是否存在键"""
-        with self.lock:
-            return key in self.cache
-
 class WhisperManager:
-    def __init__(self, model_size="turbo", model_dir="models/whisper", max_workers=3, use_gpu=True):
+    def __init__(self, model_size="turbo", model_dir="models/whisper", max_workers=3, use_gpu=True, 
+                 redis_host='localhost', redis_port=6379, redis_db=0, redis_password=None):
         """Whisper语音识别管理器
         
         Args:
@@ -65,6 +22,10 @@ class WhisperManager:
             model_dir: 模型存储目录
             max_workers: 最大并发转录任务数
             use_gpu: 是否使用GPU加速
+            redis_host: Redis服务器主机
+            redis_port: Redis服务器端口
+            redis_db: Redis数据库编号
+            redis_password: Redis密码（如果有）
         """
         self.model_size = model_size
         self.model_dir = Path(model_dir)
@@ -86,8 +47,15 @@ class WhisperManager:
         self.max_workers = max_workers
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
         
-        # 创建线程安全的结果缓存
-        self.results_cache = ThreadSafeDict(max_size=200)
+        # 创建Redis缓存
+        self.results_cache = RedisCache(
+            host=redis_host,
+            port=redis_port,
+            db=redis_db,
+            password=redis_password,
+            prefix='whisper:results:',
+            expire=3600*24  # 结果缓存1天
+        )
         self.futures = {}  # 跟踪正在处理的任务
         self.futures_lock = threading.RLock()  # 用于futures字典的锁
         
@@ -136,7 +104,7 @@ class WhisperManager:
             duration = time.time() - start_time
             logger.info(f"转录完成({duration:.2f}秒): {result['text'][:50]}...")
             
-            # 存储结果到缓存
+            # 存储结果到Redis缓存
             self.results_cache.set(audio_file, result)
             
             return result
@@ -187,7 +155,7 @@ class WhisperManager:
             # 首先检查缓存中是否有结果
             result = self.results_cache.get(audio_file)
             if result:
-                logger.info(f"从缓存获取音频 {audio_file} 的转录结果")
+                logger.info(f"从Redis缓存获取音频 {audio_file} 的转录结果")
                 if remove_after:
                     self.results_cache.remove(audio_file)
                 return result
@@ -245,7 +213,7 @@ class WhisperManager:
         with self.futures_lock:
             future = self.futures.get(audio_file)
             
-        # 如果任务不存在，则认为转录完成,防止处部检查死循环
+        # 如果任务不存在，则认为转录完成，防止外部检查死循环
         if not future:
             return True
             
@@ -256,7 +224,7 @@ class WhisperManager:
         if self.transcribe(audio_file):
             while not self.is_transcription_complete(audio_file):
                 time.sleep(0.1)
-            return self.get_result(audio_file,True)
+            return self.get_result(audio_file, True)
         else:
             return None
         
@@ -269,4 +237,12 @@ class WhisperManager:
         if self.use_gpu:
             torch.cuda.empty_cache()
             
-        logger.info("Whisper转录线程池已关闭") 
+        logger.info("Whisper转录线程池已关闭")
+        
+    def get_cache_stats(self):
+        """获取缓存统计信息"""
+        try:
+            return self.results_cache.get_status()
+        except Exception as e:
+            logger.error(f"获取缓存统计信息失败: {e}")
+            return {"status": "error", "message": str(e)} 

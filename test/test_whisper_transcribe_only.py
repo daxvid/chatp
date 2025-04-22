@@ -75,7 +75,7 @@ def main():
         return
     
     # 创建模型目录
-    model_dir = Path("models/whisper")
+    model_dir = Path("../models/whisper")
     model_dir.mkdir(parents=True, exist_ok=True)
     
     # 要测试的模型列表

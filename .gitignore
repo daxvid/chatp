@@ -12,3 +12,4 @@ MicroSIP.jpg
 /tts_cache
 conf/config.yaml
 conf/response.yaml
+*.wav

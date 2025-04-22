@@ -17,6 +17,11 @@ import pydub
 import subprocess
 from datetime import datetime
 import concurrent.futures
+import whisper
+from pathlib import Path
+import audioop
+import json
+import torch
 
 # 尝试导入常用音频处理库
 HAVE_SOUNDFILE = False
@@ -492,59 +497,116 @@ class SIPCall(pj.Call):
 
 class SIPCaller:
     """SIP呼叫管理类"""
-    def __init__(self, sip_config, tts_manager, whisper_manager):
-        self.config = sip_config
-        self.ep = None
-        self.acc = None
-        self.current_call = None
-        self.phone_number = None
+    def __init__(self, sip_config, tts_manager=None, whisper_manager=None):
+        """初始化SIP客户端"""
+        self.sip_config = sip_config
+        self.tts_manager = tts_manager
         self.whisper_manager = whisper_manager
+        self.current_call = None
+        self.call_history = []
+        self.audio_queue = []
         
         # 初始化ResponseManager
         self.response_manager = ResponseManager(yaml_file="conf/response.yaml")
         
-        # 初始化TTS管理器
-        self.tts_manager = tts_manager
+        # PJSIP相关对象
+        self.ep = None
+        self.acc = None
+        self.call_cb = None
         
-        # 初始化PJSIP
-        self._init_pjsua2()
+        # 转录相关
+        self.recording_dir = "recordings"
+        self.current_recording = None
         
-        # 预先生成所有可能回复的语音文件
-        self._pregenerate_tts_responses()
+        # 确保录音目录存在
+        os.makedirs(self.recording_dir, exist_ok=True)
         
-    def _init_pjsua2(self):
-        """初始化PJSIP"""
+        # 先预生成所有可能回复的语音文件，避免因为PJSIP初始化失败而无法预生成
+        if self.tts_manager:
+            self._pregenerate_tts_responses()
+        
         try:
-            # 创建Endpoint
+            # 初始化PJSIP引擎
+            logger.info("初始化PJSIP引擎...")
             self.ep = pj.Endpoint()
             self.ep.libCreate()
-
-            # 初始化库
+            
+            # 配置PJSIP
             ep_cfg = pj.EpConfig()
-            # 禁用SSL证书验证
-            ep_cfg.uaConfig.verifyServerCert = False
+            ep_cfg.logConfig.level = 4  # 日志级别
+            ep_cfg.logConfig.consoleLevel = 4
+            
+            # 媒体配置
+            ep_cfg.medConfig.noVad = True  # 禁用VAD（语音活动检测）
+            ep_cfg.medConfig.clockRate = 8000  # 时钟频率
+            ep_cfg.medConfig.sndClockRate = 8000  # 声音时钟频率
+            
+            # 启用无声卡模式
+            ep_cfg.uaConfig.noAudioDevice = True  # 允许无音频设备启动
+            
+            # 初始化PJSIP库
             self.ep.libInit(ep_cfg)
-
-            # 创建传输
-            sipTpConfig = pj.TransportConfig()
-            sipTpConfig.port = self.config.get('bind_port', 6000)
-            self.ep.transportCreate(pj.PJSIP_TRANSPORT_UDP, sipTpConfig)
-
-            # 启动库
-            logger.info("正在启动PJSIP库...")
+            
+            # 创建UDP传输
+            transport_cfg = pj.TransportConfig()
+            transport_cfg.port = 0  # 使用随机端口
+            self.ep.transportCreate(pj.PJSIP_TRANSPORT_UDP, transport_cfg)
+            
+            # 启动PJSIP库
             self.ep.libStart()
+            
+            # 配置媒体设备
+            media_cfg = pj.MediaConfig()
+            media_cfg.clockRate = 8000  # 媒体时钟频率
+            media_cfg.sndClockRate = 8000  # 声音时钟频率
+            media_cfg.channelCount = 1  # 单声道
+            
+            # 配置音频设备(使用空设备)
+            snd_cfg = pj.AudioDevInfo()
+            snd_cfg.captureDevId = -2  # 使用null设备(-1是默认设备，-2是空设备)
+            snd_cfg.playbackDevId = -2  # 使用null设备
+            
+            try:
+                logger.info("尝试配置音频设备...")
+                self.ep.audDevManager().setNullDev()  # 设置空音频设备
+                
+                # 尝试配置音频设备，如果失败则使用空设备
+                try:
+                    self.ep.audDevManager().setCaptureDevById(-1)  # 尝试使用默认设备
+                    self.ep.audDevManager().setPlaybackDevById(-2)  # 使用空播放设备
+                except Exception as e:
+                    logger.warning(f"无法配置默认录音设备，使用空设备: {e}")
+                    self.ep.audDevManager().setNullDev()
+            except Exception as e:
+                logger.warning(f"配置音频设备出错，尝试继续: {e}")
+                # 继续尝试，因为我们使用外部录音/播放机制
+                
+            # 注册SIP账号
+            self._register_account()
+            
+            logger.info("SIP客户端初始化完成")
+            
+        except Exception as e:
+            logger.error(f"SIP客户端初始化失败: {e}")
+            logger.error(f"详细错误: {traceback.format_exc()}")
+            # 确保资源被释放
+            self.stop()
+            raise
 
+    def _register_account(self):
+        """注册SIP账号"""
+        try:
             # 创建账户配置
             acc_cfg = pj.AccountConfig()
-            acc_cfg.idUri = f"sip:{self.config['username']}@{self.config['server']}:{self.config['port']}"
-            acc_cfg.regConfig.registrarUri = f"sip:{self.config['server']}:{self.config['port']}"
+            acc_cfg.idUri = f"sip:{self.sip_config['username']}@{self.sip_config['server']}:{self.sip_config['port']}"
+            acc_cfg.regConfig.registrarUri = f"sip:{self.sip_config['server']}:{self.sip_config['port']}"
             acc_cfg.sipConfig.authCreds.append(
                 pj.AuthCredInfo(
                     "digest",
                     "*",
-                    self.config['username'],
+                    self.sip_config['username'],
                     0,
-                    self.config['password']
+                    self.sip_config['password']
                 )
             )
 
@@ -561,9 +623,10 @@ class SIPCaller:
                 logger.info(f"等待SIP注册完成，状态: {self.acc.getInfo().regStatus}...")
                 time.sleep(0.5)
 
-            logger.info("SIP客户端初始化成功")
-        except pj.Error as e:
-            logger.error(f"初始化PJSIP失败: {e}")
+            logger.info("SIP客户端注册完成")
+        except Exception as e:
+            logger.error(f"注册SIP账号失败: {e}")
+            logger.error(f"详细错误: {traceback.format_exc()}")
             raise
 
     def _pregenerate_tts_responses(self):
@@ -592,7 +655,7 @@ class SIPCaller:
                     voice_file = self.tts_manager.generate_tts_sync(response_text)
                     
                     if voice_file:
-                        if self.tts_manager.is_from_cache(response_text):
+                        if hasattr(self.tts_manager, 'is_from_cache') and self.tts_manager.is_from_cache(response_text):
                             cache_count += 1
                         else:
                             success_count += 1
@@ -608,8 +671,7 @@ class SIPCaller:
         except Exception as e:
             logger.error(f"预生成TTS回复时出错: {e}")
             logger.error(f"详细错误: {traceback.format_exc()}")
-    
-
+            # 这里不抛出异常，确保即使预生成失败也能继续运行
 
     def make_call(self, number):
         """拨打电话"""
@@ -619,14 +681,14 @@ class SIPCaller:
 
         try:
             # 清理数据
-            self.phone_number = number.strip()
+            number = number.strip()
             logger.info(f"=== 开始拨号 ===")
-            logger.info(f"目标号码: {self.phone_number}")
+            logger.info(f"目标号码: {number}")
             
             # 构建SIP URI
-            sip_uri = f"sip:{self.phone_number}@{self.config.get('server', '')}:{self.config.get('port', '')}"
+            sip_uri = f"sip:{number}@{self.sip_config.get('server', '')}:{self.sip_config.get('port', '')}"
             logger.info(f"SIP URI: {sip_uri}")
-            logger.info(f"SIP账户: {self.config.get('username', '')}@{self.config.get('server', '')}:{self.config.get('port', '')}")
+            logger.info(f"SIP账户: {self.sip_config.get('username', '')}@{self.sip_config.get('server', '')}:{self.sip_config.get('port', '')}")
 
             # 创建通话对象，并传入电话号码和响应语音文件
             call = SIPCall(self.acc, self.whisper_manager, number)
@@ -643,7 +705,6 @@ class SIPCaller:
             
             # 更新当前通话
             self.current_call = call
-            self.phone_number = number
             logger.info("拨号请求已发送,等待呼叫状态变化...")
             return call
         except Exception as e:

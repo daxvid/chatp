@@ -35,9 +35,8 @@ logger = logging.getLogger("sip")
 class WhisperTranscriber:
     """Whisper语音转文本处理类"""
     
-    def __init__(self, whisper_manager=None):
-        self.whisper_manager = whisper_manager
-    
+    def __init__(self):
+        pass
     
     def transcribe_file(self, audio_file, segment_count=0):
         """语音识别单个音频文件"""

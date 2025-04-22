@@ -80,11 +80,9 @@ class CallManager:
                 logger.info(f"电话 {phone_number} 呼叫建立，等待通话完成...")
 
                 while call.is_active():
-                    call.voice_check()
-                    while len(call.talk_list) < len(call.file_list):
-                        call.process_file_list()
-                        time.sleep(0.01)
-                    time.sleep(0.1)
+                    count = call.voice_check()
+                    if count == 0:
+                        time.sleep(0.1)
                 
                 # 从SIPCall获取呼叫结果
                 result = call.call_result

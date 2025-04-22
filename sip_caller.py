@@ -22,6 +22,7 @@ from pathlib import Path
 import audioop
 import json
 import torch
+from queue import Queue
 
 # 尝试导入常用音频处理库
 HAVE_SOUNDFILE = False
@@ -260,7 +261,7 @@ class SIPCall(pj.Call):
             ffmpeg_command = f"ffmpeg -i {audio_file} -af silenceremove=stop_periods=-1:stop_duration=0.5:stop_threshold=-50dB {temp_file}"
             subprocess.run(ffmpeg_command, shell=True, check=True)
 
-            result = self.whisper_manager.transcribe_and_wait_result(temp_file)
+            result = self.whisper_manager.transcribe(temp_file)
             if result:
                 return result.get("text", "").strip()
             else:
@@ -410,10 +411,10 @@ class SIPCall(pj.Call):
         # 语音分段逻辑,将录音文件分段,每段至少800ms,每段结束时计算RMS值,如果低于-50 dBFS阈值,认为是静音,则保存该段,否则停止分段
         recording_file = self.recording_file
         if not (recording_file and os.path.exists(recording_file)):
-            return
+            return 0
         file_size = os.path.getsize(recording_file)
         if file_size < 8*1024: 
-            return
+            return 0
 
         start_time = datetime.now()
         base_name, ext = os.path.splitext(recording_file)
@@ -422,6 +423,7 @@ class SIPCall(pj.Call):
             os.remove(temp_file)
         shutil.copy(recording_file, temp_file)
 
+        count = 0
         try:
             fix_wav_file_in_place(temp_file)
             audio = pydub.AudioSegment.from_wav(temp_file)
@@ -435,7 +437,7 @@ class SIPCall(pj.Call):
 
             chunks_size = self.chunks_size
             if len(chunks) <= chunks_size:
-                return
+                return 0
             
             logger.info(f"时长:{len(audio)/1000}秒, 共:{len(chunks)} 段, 已处理{self.chunks_size},文件:{temp_file}")
             for i in range(chunks_size, len(chunks)):
@@ -459,24 +461,17 @@ class SIPCall(pj.Call):
                 logger.info(f"保存录音文件: {chunk_file}")
                 self.chunks_size += 1
                 self.file_list.append(chunk_file)
-                self.whisper_manager.transcribe(chunk_file)
+                result = self.whisper_manager.transcribe(chunk_file)
+                self.process_result(result)
+                count+=1
         finally:
             os.remove(temp_file)
-
-    def process_file_list(self):
-        """处理对话列表"""
-        process_talk = len(self.talk_list)
-        if process_talk >= len(self.file_list):
-            return
-            
-        chunk_file = self.file_list[process_talk]
-        # 检查转录结果是否可用
-        if not self.whisper_manager.is_transcription_complete(chunk_file):
-            return
-
+        return count
+    
+    def process_result(self, result):
+        """处理转录结果"""
         talk = ''
         try:
-            result = self.whisper_manager.get_result(chunk_file)
             if result:
                 talk = result.get("text", "").strip()
 

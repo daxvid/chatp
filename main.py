@@ -185,7 +185,7 @@ def wait_for_interval(interval, exit_event):
             break
         time.sleep(1)
 
-def wait_for_call_completion(call_manager, whisper_manager, timeout=180):
+def wait_for_call_completion(call_manager, whisper_manager, timeout=600):
     """等待当前通话完成"""
     logger.info("等待通话完成...")
     call_start_time = time.time()
@@ -268,7 +268,7 @@ def cleanup_resources():
             sip_caller.stop()
             sip_caller = None
             
-        # 关闭WhisperManager线程池
+        # 关闭WhisperManager
         if 'services' in globals() and services and 'whisper_manager' in services:
             whisper_manager = services.get('whisper_manager')
             if hasattr(whisper_manager, 'shutdown'):

@@ -46,6 +46,7 @@ def transcribe_directory(input_dir, output_file=None, file_types=None):
     logger.info(f"Found {len(audio_files)} audio files in {input_dir}")
     
     results = []
+    results603 = []
     total_duration = 0
     successful_count = 0
     
@@ -86,10 +87,13 @@ def transcribe_directory(input_dir, output_file=None, file_types=None):
                         "text": seg.get("text"),
                         "no_speech_prob‌": seg.get("no_speech_prob‌"),
                         "temperature‌": seg.get("temperature‌"),
-                        "avg_logprob‌": seg.get("avg_logprob‌")
+                        "avg_logprob‌": seg.get("avg_logprob‌"),
+                        "compression_ratio‌": seg.get("compression_ratio‌")
                     }
                     for seg in transcription["segments"]
                 ]
+            if "603" in transcription["text"]:
+                results603.append(file_result)
         else:
             file_result["text"] = None
             file_result["error"] = "Transcription failed"
@@ -155,6 +159,12 @@ def transcribe_directory(input_dir, output_file=None, file_types=None):
     
     # Clean up
     whisper_manager.shutdown()
+
+    # Save results603 to a file
+    results603_path = Path("results603.json")
+    with open(results603_path, 'w', encoding='utf-8') as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
+    logger.info(f"Results saved to {results603_path}")
     
     return results
 

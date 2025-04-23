@@ -163,7 +163,7 @@ def transcribe_directory(input_dir, output_file=None, file_types=None):
     # Save results603 to a file
     results603_path = Path("results603.json")
     with open(results603_path, 'w', encoding='utf-8') as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
+        json.dump(results603, f, ensure_ascii=False, indent=2)
     logger.info(f"Results saved to {results603_path}")
     
     return results

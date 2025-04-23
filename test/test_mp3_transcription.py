@@ -36,7 +36,7 @@ def transcribe_directory(input_dir, output_file=None, file_types=None):
         file_types = ['.mp3', '.wav']
     
     # Initialize Whisper with turbo model
-    whisper_manager = WhisperManager(model_size="turbo")
+    whisper_manager = WhisperManager(model_size="turbo", model_dir="../models/whisper")
     
     # Find all audio files with specified extensions
     audio_files = []
@@ -83,7 +83,10 @@ def transcribe_directory(input_dir, output_file=None, file_types=None):
                         "id": seg.get("id"),
                         "start": seg.get("start"),
                         "end": seg.get("end"),
-                        "text": seg.get("text")
+                        "text": seg.get("text"),
+                        "no_speech_prob‌": seg.get("no_speech_prob‌"),
+                        "temperature‌": seg.get("temperature‌"),
+                        "avg_logprob‌": seg.get("avg_logprob‌")
                     }
                     for seg in transcription["segments"]
                 ]

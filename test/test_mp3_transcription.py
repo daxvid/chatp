@@ -85,10 +85,10 @@ def transcribe_directory(input_dir, output_file=None, file_types=None):
                         "start": seg.get("start"),
                         "end": seg.get("end"),
                         "text": seg.get("text"),
-                        "no_speech_prob‌": seg.get("no_speech_prob‌"),
-                        "temperature‌": seg.get("temperature‌"),
-                        "avg_logprob‌": seg.get("avg_logprob‌"),
-                        "compression_ratio‌": seg.get("compression_ratio‌")
+                        "no_speech_prob": seg.get("no_speech_prob"),
+                        "avg_logprob": seg.get("avg_logprob"),
+                        "compression_ratio": seg.get("compression_ratio")
+                        # "temperature": seg.get("temperature")
                     }
                     for seg in transcription["segments"]
                 ]

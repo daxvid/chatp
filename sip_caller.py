@@ -164,6 +164,10 @@ class SIPCall(pj.Call):
             # 使用ResponseManager获取回复
             if self.response_manager:
                 response_text = self.response_manager.get_response(text)
+                if not response_text:
+                    logger.info(f"没有匹配到回复规则,播放下载地址")
+                    response_text = self.response_manager.get_response("播-放-下-载-地-址")
+
                 if response_text:
                     logger.info(f"匹配到回复: {response_text}")
                     # 使用TTS生成语音
@@ -176,8 +180,6 @@ class SIPCall(pj.Call):
                             logger.error(f"生成TTS文件失败")
                     else:
                         logger.error(f"TTS管理器未初始化")
-                else:
-                    logger.info(f"没有匹配到回复规则")
             else:
                 logger.info(f"ResponseManager未初始化")
 
@@ -233,11 +235,6 @@ class SIPCall(pj.Call):
         if self.call_result['status'] == '接通':
             duration = (self.call_result['end_time'] - self.call_result['start_time']).total_seconds()
             self.call_result['duration'] = f"{duration:.1f}秒"
-        
-        # 停止当前播放
-        if self.player and self.audio_media:
-            self.player.stopTransmit(self.audio_media)
-            self.player = None
         
         # 停止录音
         if self.recorder:

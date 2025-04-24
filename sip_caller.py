@@ -194,7 +194,6 @@ class SIPCall(pj.Call):
             timestamp = datetime.now().strftime("_%H%M%S")
             base_name, ext = os.path.splitext(audio_file)
             temp_file = f"{base_name}{timestamp}.sm{ext}"
-            logger.info(f"开始语音识别: {temp_file}")
             if os.path.exists(temp_file):
                 os.remove(temp_file)
             # 使用ffg去掉静音

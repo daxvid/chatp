@@ -59,10 +59,6 @@ class WhisperManager:
             if not os.path.exists(audio_file):
                 logger.error(f"音频文件不存在: {audio_file}")
                 return None
-            
-            # 如果使用GPU，先清理缓存
-            if self.use_gpu:
-                torch.cuda.empty_cache()
                 
             logger.info(f"开始转录音频: {audio_file}")
             start_time = time.time()

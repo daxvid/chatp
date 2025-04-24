@@ -64,21 +64,21 @@ class SIPCall(pj.Call):
         self.tts_manager = None
         self.response_manager = None
         self.audio_media = None
-        self.audio_recorder = None
         self.ep = None
         self.player = None
         self.chunks_size = 0     # 已保存的音频段数量
         self.file_list = list()  # 已分段的对话文件列表
         self.talk_list = list()  # 已转录的文本内容
+        self.call_time = datetime.now()    # 开始呼叫的时间
         # 通话结果数据
         self.call_result = {
             'phone_number': phone_number,
-            'call_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'call_time': self.call_time.strftime('%Y-%m-%d %H:%M:%S'),
             'status': '未接通',
             'duration': '',
             'recording': '',
             'transcription': '',
-            'start_time': datetime.now(),
+            'start_time': self.call_time,
             'end_time': None
         }
     
@@ -89,90 +89,54 @@ class SIPCall(pj.Call):
         except Exception as e:
             logger.error(f"获取Endpoint实例失败: {e}")
             
-    def start_recording(self, phone_number):
+    def start_recording(self):
         """开始录音"""
+        if not self.audio_media:
+            logger.error(f"无法获取音频媒体，无法开始录音")
+            return False
+        
+        if self.recorder:
+            logger.error(f"录音器已存在，无法开始录音")
+            return False
+
         try:
-            # 如果已经有录音器和录音文件，则不再创建
-            if self.recorder or self.audio_recorder:
-                logger.info(f"录音器已存在，不再创建")
-                return True
-                
+            
+            day_str = self.call_time.strftime("%Y%m%d")
             # 创建recordings目录
-            recordings_dir = "recordings"
+            recordings_dir = f"recordings/{day_str}"
             os.makedirs(recordings_dir, exist_ok=True)
             
             # 清理电话号码中的特殊字符，只保留数字
-            clean_number = ''.join(filter(str.isdigit, phone_number))
+            clean_number = ''.join(filter(str.isdigit, self.phone_number))
             
             # 创建录音文件名，格式：电话号码_日期时间.wav
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"{clean_number}_{timestamp}.wav"
-            self.recording_file = os.path.join(recordings_dir, filename)
+            recording_file = os.path.join(recordings_dir, filename)
             
-            # 直接创建录音器，但尝试获取媒体录音需要放在onCallMediaState
             try:
                 # 创建录音器实例
-                self.recorder = pj.AudioMediaRecorder()
-                self.recorder.createRecorder(self.recording_file)
-                logger.info(f"录音创建成功: {self.recording_file}")
-                
-                # 获取当前音频媒体 - 尝试在这里就连接，如果成功最好
-                try:
-                    audio_media = self.getAudioMedia(-1)
-                    if audio_media:
-                        audio_media.startTransmit(self.recorder)
-                        logger.info(f"已立即开始录音: {self.recording_file}")
-                    else:
-                        logger.info(f"无法获取音频媒体，将在媒体状态变化时开始录音")
-                except Exception as e:
-                    logger.info(f"无法立即连接音频媒体，将在媒体状态变化时开始录音: {e}")
+                recorder = pj.AudioMediaRecorder()
+                recorder.createRecorder(recording_file)
+                self.audio_media.startTransmit(recorder)
+                self.recording_file = recording_file
+                self.recorder = recorder
+                self.call_result['recording'] = recording_file
+                logger.info(f"录音创建成功: {recording_file}")
+                return True
             except Exception as e:
-                logger.error(f"创建录音设备失败: {e}")
-                self.recording_file = None
-                self.recorder = None
-                return False
-                
-            return True
-            
+                logger.error(f"创建录音失败: {e}")
+
         except Exception as e:
             logger.error(f"录音准备失败: {e}")
-            self.recording_file = None
-            self.recorder = None
-            return False
+
+        return False
     
     def onCallMediaState(self, prm):
         """处理呼叫媒体状态改变事件"""
         try:
             ci = self.getInfo()
             logger.info(f"呼叫媒体状态改变，当前呼叫状态: {ci.stateText}")
-            
-            # 尝试获取音频媒体
-            try:
-                self.audio_media = self.getAudioMedia(-1)
-                
-                if not self.audio_media:
-                    logger.error("无法获取音频媒体")
-                    return
-                    
-                logger.info("成功获取音频媒体")
-                    
-                # 处理录音 - 检查是否已经有录音器但尚未连接到音频媒体
-                if self.recorder and not self.audio_recorder:
-                    try:
-                        # 连接现有录音器到音频媒体
-                        logger.info(f"连接音频媒体到已有录音设备: {self.recording_file}")
-                        self.audio_media.startTransmit(self.recorder)
-                        # 记录录音器以便后续使用
-                        self.audio_recorder = self.recorder
-                        logger.info(f"开始录音: {self.recording_file}")
-                    except Exception as e:
-                        logger.error(f"连接录音设备失败: {e}")
-                        logger.error(f"详细错误: {traceback.format_exc()}")
-                
-            except Exception as e:
-                logger.error(f"处理音频媒体时出错: {e}")
-                logger.error(f"详细错误: {traceback.format_exc()}")
-                
         except Exception as e:
             logger.error(f"处理呼叫媒体状态改变时出错: {e}")
             logger.error(f"详细错误: {traceback.format_exc()}")
@@ -180,17 +144,14 @@ class SIPCall(pj.Call):
     def stop_recording(self):
         """停止录音"""
         try:
-            if self.audio_recorder:
+            if self.audio_media and self.recorder:
+                self.audio_media.stopTransmit(self.recorder)
                 # 停止录音
-                self.audio_recorder = None
+                self.recorder = None
                 logger.info(f"录音已停止: {self.recording_file}")
                 return True
-            elif self.recorder:
-                # 可能是创建了录音器但尚未连接到音频媒体
-                self.recorder = None
-                logger.info(f"录音已停止 (录音器未连接): {self.recording_file}")
-                return True
-            return False
+            else: 
+                return False
         except Exception as e:
             logger.error(f"停止录音失败: {e}")
             return False
@@ -249,8 +210,48 @@ class SIPCall(pj.Call):
         except Exception as e:
             logger.error(f"转录录音文件失败: {e}")
             logger.error(f"详细错误: {traceback.format_exc()}")
-            return None
+            return None          
+
+    def onCallConfirmed(self, prm, ci):
+        logger.info("通话已接通")
+        # 更新通话状态为已接通
+        self.call_result['status'] = '接通'
+        if not self.audio_media:
+            self.audio_media = self.getAudioMedia(-1)
+            self.start_recording()
+            # 等待0.5秒,开始播放第一条语音
+            time.sleep(0.5)
+            self.response_callback("播-放-开-场-欢-迎-语")
+
+
+    def onCallDisconnected(self, prm, ci):
+        logger.info("通话已结束")
+        # 记录通话结束时间
+        self.call_result['end_time'] = datetime.now()
+    
+        # 如果之前标记为接通，则计算通话时长
+        if self.call_result['status'] == '接通':
+            duration = (self.call_result['end_time'] - self.call_result['start_time']).total_seconds()
+            self.call_result['duration'] = f"{duration:.1f}秒"
+        
+        # 停止当前播放
+        if self.player and self.audio_media:
+            self.player.stopTransmit(self.audio_media)
+            self.player = None
+        
+        # 停止录音
+        if self.recorder:
+            self.stop_recording()
+            # 转录通话录音并更新结果
+            transcription = self.transcribe_audio()
+            if transcription:
+                self.call_result['transcription'] = transcription
+                logger.info(f"转录结果: {transcription[:50]}...")
+            else:
+                logger.warning("无法获取转录结果")
+        
             
+        logger.info("通话已挂断")
 
     def onCallState(self, prm):
         """呼叫状态改变时的回调函数"""
@@ -274,55 +275,16 @@ class SIPCall(pj.Call):
                 
             elif ci.state == pj.PJSIP_INV_STATE_EARLY:
                 logger.info("对方电话开始响铃...")
-                
+
             elif ci.state == pj.PJSIP_INV_STATE_CONNECTING:
                 logger.info("正在建立连接...")
-                
+
             elif ci.state == pj.PJSIP_INV_STATE_CONFIRMED:
-                logger.info("通话已接通")
-                # 更新通话状态为已接通
-                self.call_result['status'] = '接通'
-                
-                # 如果有指定电话号码，启动录音
-                if self.phone_number:
-                    self.start_recording(self.phone_number)
-                
+                self.onCallConfirmed(prm, ci)
+
             elif ci.state == pj.PJSIP_INV_STATE_DISCONNECTED:
-                logger.info(f"通话已结束: 状态码={ci.lastStatusCode}, 原因={ci.lastReason}")
-                
-                # 记录通话结束时间
-                self.call_result['end_time'] = datetime.now()
-                
-                # 如果之前标记为接通，则计算通话时长
-                if self.call_result['status'] == '接通':
-                    duration = (self.call_result['end_time'] - self.call_result['start_time']).total_seconds()
-                    self.call_result['duration'] = f"{duration:.1f}秒"
-                
-                # 停止音频传输
-                try:
-                    if self.audio_media and self.audio_recorder:
-                        self.audio_media.stopTransmit(self.audio_recorder)
-                except Exception as e:
-                    logger.error(f"停止音频传输时出错: {e}")
-                
-                # 停止录音
-                if self.recorder:
-                    self.stop_recording()
-                    
-                    # 转录通话录音并更新结果
-                    transcription = self.transcribe_audio()
-                    if transcription:
-                        self.call_result['transcription'] = transcription
-                        logger.info(f"转录结果: {transcription[:50]}...")
-                    else:
-                        logger.warning("无法获取转录结果")
-                
-                # 更新录音文件路径
-                if self.recording_file:
-                    self.call_result['recording'] = self.recording_file
-                    
-                logger.info("通话已挂断")
-                
+                self.onCallDisconnected(prm, ci)
+
         except Exception as e:
             logger.error(f"处理呼叫状态变化时出错: {e}")
             logger.error(f"详细错误: {traceback.format_exc()}")
@@ -342,7 +304,7 @@ class SIPCall(pj.Call):
             # 尝试立即播放，如果可能的话
             try:
                 # 获取通话媒体
-                audio_media = self.getAudioMedia(-1)
+                audio_media = self.audio_media
                 if audio_media:
                     # 创建自定义音频播放器
                     player = CustomAudioMediaPlayer()
@@ -359,10 +321,9 @@ class SIPCall(pj.Call):
                     player.startTransmit(audio_media)
                     logger.info(f"开始播放语音: {voice_file}")
                     self.player = player
-                    self.audio_media = audio_media
                     return True
                 else:
-                    logger.warning("无法获取音频媒体，将在下一次媒体状态变化时尝试播放")
+                    logger.warning("无法获取音频媒体，播放失败")
                     return False
             except Exception as e:
                 logger.warning(f"立即播放失败，将在下一次媒体状态改变时尝试: {e}")
@@ -390,6 +351,7 @@ class SIPCall(pj.Call):
         recording_file = self.recording_file
         if not (recording_file and os.path.exists(recording_file)):
             return 0
+
         file_size = os.path.getsize(recording_file)
         if file_size < 8*1024: 
             return 0
@@ -452,11 +414,6 @@ class SIPCall(pj.Call):
         try:
             if result:
                 talk = result.get("text", "").strip()
-
-            if len(self.talk_list) == 0:
-                # 如果是第一次，则播放欢迎语
-                self.response_callback("播-放-开-场-欢-迎-语")
-            else:
                 # 如果成功识别到文本，调用回调
                 if talk and talk != '':
                     self.response_callback(talk)

@@ -85,7 +85,7 @@ def load_configuration():
 
 def initialize_services(sip_config):
     """初始化TTS, Whisper和SIP服务"""
-    global sip_caller, services
+    global sip_caller, services, exit_event
     
     try:
         # 初始化TTS引擎
@@ -116,7 +116,7 @@ def initialize_services(sip_config):
 
         # 初始化呼叫管理器
         logger.info("初始化呼叫管理器...")
-        call_manager = CallManager(sip_caller, tts_manager, whisper_manager)
+        call_manager = CallManager(sip_caller, tts_manager, whisper_manager, exit_event)
         
         # 存储服务实例以便全局访问
         services = {
@@ -150,33 +150,6 @@ def prepare_call_list(call_manager, call_list_file):
         logger.error(f"详细错误: {traceback.format_exc()}")
         return None
 
-def check_call_state(sip_caller):
-    """检查通话状态"""
-    try:
-        if sip_caller.current_call:
-            call_info = sip_caller.current_call.getInfo()
-            state_names = {
-                pj.PJSIP_INV_STATE_NULL: "NULL",
-                pj.PJSIP_INV_STATE_CALLING: "CALLING",
-                pj.PJSIP_INV_STATE_INCOMING: "INCOMING",
-                pj.PJSIP_INV_STATE_EARLY: "EARLY",
-                pj.PJSIP_INV_STATE_CONNECTING: "CONNECTING",
-                pj.PJSIP_INV_STATE_CONFIRMED: "CONFIRMED",
-                pj.PJSIP_INV_STATE_DISCONNECTED: "DISCONNECTED"
-            }
-            state_name = state_names.get(call_info.state, f"未知状态({call_info.state})")
-            logger.debug(f"通话状态: {state_name}")
-            
-            # 如果通话已断开，返回True表示可以继续下一个号码
-            if call_info.state == pj.PJSIP_INV_STATE_DISCONNECTED:
-                logger.info("通话已断开，继续下一个号码")
-                return True
-        
-        return False
-    except Exception as e:
-        logger.debug(f"获取通话状态时出错: {e}")
-        return False
-
 def wait_for_interval(interval, exit_event):
     """等待指定的时间间隔，支持中断"""
     logger.info(f"等待 {interval} 秒后拨打下一个电话...")
@@ -185,56 +158,6 @@ def wait_for_interval(interval, exit_event):
             break
         time.sleep(1)
 
-def wait_for_call_completion(call_manager, whisper_manager, timeout=600):
-    """等待当前通话完成"""
-    logger.info("等待通话完成...")
-    call_start_time = time.time()
-    last_transcription_count = 0
-    
-    
-    while sip_caller.current_call and sip_caller.current_call.isActive():
-        # 检查退出请求
-        if exit_event.is_set():
-            logger.info("检测到退出请求，中断当前通话")
-            sip_caller.hangup()
-            break
-        
-        # 检查通话时间是否超时
-        if time.time() - call_start_time > timeout:
-            logger.warning(f"通话时间超过{timeout}秒，强制结束")
-            sip_caller.hangup()
-            break
-            
-        # 检查通话状态
-        if check_call_state(sip_caller):
-            break
-        
-        # 短暂休眠
-        time.sleep(0.5)
-    
-    # 确保通话已结束
-    if sip_caller.current_call and sip_caller.current_call.isActive():
-        logger.info("强制结束当前通话")
-        sip_caller.hangup()
-        
-    # 等待一小段时间确保录音和转录完成
-    logger.info("等待录音和转录完成...")
-    time.sleep(3)
-
-def make_call_and_wait(call_manager, whisper_manager, phone_number):
-    """拨打电话并等待通话完成"""
-    try:
-        # 拨打电话
-        result = call_manager.make_call_with_tts(phone_number)
-        
-        # 等待通话完成
-        wait_for_call_completion(call_manager, whisper_manager)
-        
-        return True
-    except Exception as e:
-        logger.error(f"拨打电话或等待通话完成时出错: {e}")
-        logger.error(f"详细错误: {traceback.format_exc()}")
-        return False
 
 def process_phone_list(call_list, call_manager, whisper_manager, call_log_file, sip_config):
     """处理电话号码列表"""
@@ -249,7 +172,7 @@ def process_phone_list(call_list, call_manager, whisper_manager, call_log_file, 
         logger.info(f"正在处理第 {i+1}/{len(call_list)} 个号码: {phone_number}")
         
         # 拨打电话并等待通话完成
-        make_call_and_wait(call_manager, whisper_manager, phone_number)
+        call_manager.make_call_and_wait(phone_number)
         
         # 保存结果
         call_manager.save_call_results(call_log_file)

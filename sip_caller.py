@@ -642,8 +642,7 @@ class SIPCaller:
         """挂断当前通话"""
         try:
             if self.current_call:
-                call_prm = pj.CallOpParam()
-                self.current_call.hangup(call_prm)
+                self.current_call.hangup(pj.CallOpParam())
                 self.current_call = None
                 logger.info("通话已挂断")
                 return True

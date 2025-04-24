@@ -10,7 +10,7 @@ import pjsua2 as pj
 logger = logging.getLogger("call_manager")
 
 class CallManager:
-    def __init__(self, sip_caller, tts_manager, whisper_manager):
+    def __init__(self, sip_caller, tts_manager, whisper_manager, exit_event):
         """呼叫管理器"""
         self.sip_caller = sip_caller
         self.tts_manager = tts_manager
@@ -18,6 +18,7 @@ class CallManager:
         self.call_list = []
         self.call_results = []
         self.current_index = 0
+        self.exit_event = exit_event
         
     def load_call_list(self, file_path):
         """加载呼叫列表"""
@@ -66,20 +67,31 @@ class CallManager:
             logger.error(f"保存呼叫结果失败: {e}")
             return False
             
-    def make_call_with_tts(self, phone_number):
+    def make_call_and_wait(self, phone_number):
         """使用TTS拨打电话"""
         try:
-            logger.info(f"准备拨打电话 {phone_number}...")
-
             # 拨打电话
+            timeout = 600
+            call_start_time = time.time()
             logger.info(f"开始拨打电话: {phone_number}")
             call = self.sip_caller.make_call(phone_number)
             
             # 如果呼叫建立成功，等待通话完成
             if call:
                 logger.info(f"电话 {phone_number} 呼叫建立，等待通话完成...")
-
                 while call.is_active():
+                    # 检查退出请求
+                    if self.exit_event.is_set():
+                        logger.info("检测到退出请求，中断当前通话")
+                        sip_caller.hangup()
+                        break
+                    
+                    # 检查通话时间是否超时
+                    if time.time() - call_start_time > timeout:
+                        logger.warning(f"通话时间超过{timeout}秒，强制结束")
+                        sip_caller.hangup()
+                        break
+
                     count = call.voice_check()
                     if count == 0:
                         time.sleep(0.1)
@@ -89,7 +101,7 @@ class CallManager:
                 # 保存结果
                 self.call_results.append(result)
                 logger.info(f"电话 {phone_number} 处理完成: 状态={result['status']}, 时长={result['duration']}")
-                return result
+                return True
             else:
                 logger.warning(f"电话 {phone_number} 拨打失败")
             
@@ -103,7 +115,6 @@ class CallManager:
                 'transcription': ''
             }
             self.call_results.append(failed_result)
-            return failed_result
             
         except Exception as e:
             logger.error(f"拨打电话失败: {e}")
@@ -119,10 +130,8 @@ class CallManager:
                 'transcription': ''
             }
             self.call_results.append(failed_result)
-            
-            # 确保通话已结束
-            if self.sip_caller and self.sip_caller.current_call:
-                self.sip_caller.hangup()
-            
-            return failed_result
+        finally:
+            self.sip_caller.hangup()
+         
+        return False
             

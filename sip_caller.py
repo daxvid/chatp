@@ -24,28 +24,6 @@ import json
 import torch
 from queue import Queue
 
-# 尝试导入常用音频处理库
-HAVE_SOUNDFILE = False
-HAVE_NUMPY = False
-HAVE_SCIPY = False
-try:
-    import soundfile as sf
-    HAVE_SOUNDFILE = True
-except ImportError:
-    pass
-
-try:
-    import numpy as np
-    HAVE_NUMPY = True
-except ImportError:
-    pass
-
-try:
-    from scipy import signal
-    HAVE_SCIPY = True
-except ImportError:
-    pass
-
 # 引入TTSManager
 from tts_manager import TTSManager
 # 引入WhisperManager

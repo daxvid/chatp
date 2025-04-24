@@ -7,29 +7,6 @@ import threading
 import subprocess
 import traceback
 
-# 尝试导入常用音频处理库
-HAVE_SOUNDFILE = False
-HAVE_NUMPY = False
-HAVE_SCIPY = False
-
-try:
-    import soundfile as sf
-    HAVE_SOUNDFILE = True
-except ImportError:
-    pass
-
-try:
-    import numpy as np
-    HAVE_NUMPY = True
-except ImportError:
-    pass
-
-try:
-    from scipy import signal
-    HAVE_SCIPY = True
-except ImportError:
-    pass
-
 logger = logging.getLogger("sip")
 
 class WhisperTranscriber:

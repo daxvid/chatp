@@ -641,14 +641,17 @@ class SIPCaller:
     def hangup(self):
         """挂断当前通话"""
         try:
-            if self.current_call:
-                self.current_call.hangup(pj.CallOpParam())
+            call = self.current_call
+            if call:
                 self.current_call = None
-                logger.info("通话已挂断")
-                return True
+                if call.isActive():
+                    call.hangup(pj.CallOpParam())
+                    logger.info("通话已挂断")
+                else:
+                    logger.info("通话已结束")
             else:
                 logger.warning("没有正在进行的通话")
-                return False
+            return True
         except pj.Error as e:
             logger.error(f"挂断通话失败: {e}")
             return False

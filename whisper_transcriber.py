@@ -16,7 +16,7 @@ class WhisperTranscriber:
         pass
     
     def transcribe_file(self, audio_file, segment_count=0):
-        """语音识别单个音频文件"""
+        """转录单个音频文件"""
         start_time = time.time()
         try:    
             if not audio_file or not os.path.exists(audio_file):
@@ -36,7 +36,7 @@ class WhisperTranscriber:
                 timestamp = datetime.now().strftime("_%H%M%S")
                 base_name, ext = os.path.splitext(audio_file)
                 temp_file = f"{base_name}{timestamp}.temp{ext}"
-                logger.info(f"开始语音识别: {temp_file}")
+                logger.info(f"开始转录: {temp_file}")
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
                 
@@ -50,17 +50,17 @@ class WhisperTranscriber:
                 
                 # 记录处理时间
                 duration = time.time() - start_time
-                logger.info(f"语音识别耗时: {duration:.2f}秒")
+                logger.info(f"转录耗时: {duration:.2f}秒")
                 success = True
                 if text:
-                    logger.info(f"语音识别结果: {text}")
+                    logger.info(f"转录结果: {text}")
                     return text
                 else:
-                    logger.info("语音识别结果为空")
+                    logger.info("转录结果为空")
                     return None
                     
             except Exception as e:
-                logger.error(f"语音识别失败: {e}")
+                logger.error(f"转录失败: {e}")
                 #logger.error(f"详细错误: {traceback.format_exc()}")
                 return None
                 
@@ -77,21 +77,21 @@ class WhisperTranscriber:
             return None
 
     def transcribe_file2(self, audio_file):
-        """语音识别单个音频文件 - 异步版本，使用WhisperManager的线程池"""
+        """转录单个音频文件 - 异步版本，使用WhisperManager的线程池"""
         try:
             start_time = time.time()
             text = self.whisper_manager.transcribe_and_wait_result(audio_file)
             # 记录处理时间
             duration = time.time() - start_time
-            logger.info(f"语音识别耗时: {duration:.2f}秒")
+            logger.info(f"转录耗时: {duration:.2f}秒")
             if text:
-                logger.info(f"语音识别结果: {text}")
+                logger.info(f"转录结果: {text}")
                 return text
             else:
-                logger.info("语音识别结果为空")
+                logger.info("转录结果为空")
                 return None
         except Exception as e:
-            logger.error(f"语音识别失败: {e}")
+            logger.error(f"转录失败: {e}")
             logger.error(f"详细错误: {traceback.format_exc()}")
             return None
                         

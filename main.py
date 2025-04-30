@@ -112,8 +112,8 @@ def initialize_services(sip_config, response_file):
         logger.info("初始化TTS引擎...")
         tts_manager = TTSManager()
         
-        # 初始化Whisper语音识别
-        logger.info("初始化Whisper语音识别...")
+        # 初始化Whisper转录
+        logger.info("初始化Whisper转录...")
         whisper_manager = WhisperManager()
         if not whisper_manager:
             logger.error("Whisper模型初始化失败")

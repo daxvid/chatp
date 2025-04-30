@@ -10,7 +10,7 @@ logger = logging.getLogger("whisper")
 
 class WhisperManager:
     def __init__(self, model_size="turbo", model_dir="models/whisper", use_gpu=True):
-        """Whisper语音识别管理器
+        """Whisper转录管理器
         
         Args:
             model_size: 模型大小 (tiny, base, small, medium, large, turbo)

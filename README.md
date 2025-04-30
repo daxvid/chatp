@@ -8,7 +8,7 @@
 - 文本转语音（使用edge-tts）
 - 播放预设的语音文件（WAV格式）
 - 录制通话音频并保存
-- 使用Whisper进行语音识别
+- 使用Whisper进行转录
 - 记录呼叫结果和通话内容
 
 ## 系统要求
@@ -92,7 +92,7 @@ auto-caller/
 ├── config_manager.py      # 配置管理模块
 ├── sip_caller.py          # SIP通话模块
 ├── tts_manager.py         # 文本转语音模块
-├── whisper_manager.py     # 语音识别模块
+├── whisper_manager.py     # 转录模块
 ├── call_manager.py        # 呼叫管理模块
 ├── conf/config.yaml       # 配置文件
 ├── conf/tel.txt           # 电话号码列表

@@ -49,7 +49,7 @@ class CallManager:
                 
                 # 如果文件不存在，写入表头
                 if not file_exists:
-                    writer.writerow(['电话号码', '开始时间', '结束时间', '呼叫状态', '接通时长', '录音文件', '语音识别结果'])
+                    writer.writerow(['电话号码', '开始时间', '结束时间', '呼叫状态', '接通时长', '录音文件', '转录结果'])
                 
                 # 写入所有结果
                 writer.writerow([

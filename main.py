@@ -23,14 +23,27 @@ from call_manager import CallManager
 ssl._create_default_https_context = ssl._create_unverified_context
 
 # 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("log/auto_caller.log", encoding='utf-8'),
-        logging.StreamHandler()
-    ]
-)
+def setup_logging(config_file='conf/config.yaml'):
+    """设置日志配置"""
+    config_manager = ConfigManager(config_file)
+    log_file = config_manager.get_auto_caller_file()
+    
+    # 确保日志目录存在
+    log_dir = os.path.dirname(log_file)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file, encoding='utf-8'),
+            logging.StreamHandler()
+        ]
+    )
+
+# 初始化日志
+setup_logging()
 
 logger = logging.getLogger("main")
 
@@ -181,7 +194,7 @@ def process_phone_list(call_list, call_manager, whisper_manager, call_log_file, 
         # 检查是否请求退出
         if exit_event.is_set():
             logger.info("检测到退出请求，停止拨号")
-            brea
+            break
 
         logger.info(f"正在处理第 {i+1}/{len(call_list)} 个号码: {phone_number}")
         # 拨打电话并等待通话完成

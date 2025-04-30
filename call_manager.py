@@ -57,9 +57,9 @@ class CallManager:
                     datetime.fromtimestamp(result['start']).strftime("%Y%m%d_%H%M%S"),
                     datetime.fromtimestamp(result['end']).strftime("%Y%m%d_%H%M%S"),
                     result['status'],
-                    result.get('duration', ''),
-                    result.get('record', ''),
-                    result.get('text', '')
+                    result.get('duration', '0'),
+                    result.get('record', '--'),
+                    result.get('text', '--')
                 ])
                     
             logger.info(f"呼叫结果已保存到: {file_path}")

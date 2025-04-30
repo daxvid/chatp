@@ -23,11 +23,8 @@ from call_manager import CallManager
 ssl._create_default_https_context = ssl._create_unverified_context
 
 # 配置日志
-def setup_logging(config_file='conf/config.yaml'):
+def setup_logging(log_file):
     """设置日志配置"""
-    config_manager = ConfigManager(config_file)
-    log_file = config_manager.get_auto_caller_file()
-    
     # 确保日志目录存在
     log_dir = os.path.dirname(log_file)
     if not os.path.exists(log_dir):
@@ -42,8 +39,6 @@ def setup_logging(config_file='conf/config.yaml'):
         ]
     )
 
-# 初始化日志
-setup_logging()
 
 logger = logging.getLogger("main")
 
@@ -236,15 +231,18 @@ def main():
     try:
         config_file = sys.argv[1] if len(sys.argv) > 1 else 'conf/config98.yaml'
         if not os.path.exists(config_file):
-            logger.error(f"配置文件不存在: {config_file}")
+            print(f"配置文件不存在: {config_file}")
             return 1
-        
+
         # 加载配置
         config = load_configuration(config_file)
         if not config:
             logger.error("无法加载配置，程序退出")
             return 1
-            
+        
+        # 初始化日志
+        setup_logging(config.get('auto_caller_file'))
+
         # 初始化信号处理
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)

@@ -37,9 +37,10 @@ class CallManager:
             logger.error(f"加载电话号码列表失败: {e}")
             return False
             
-    def save_call_results(self, file_path):
+    def save_call_result(self, file_path, result):
         """保存呼叫结果"""
         try:
+            self.call_results.append(result)
             # 确定文件是否已存在
             file_exists = os.path.exists(file_path)
             
@@ -51,15 +52,14 @@ class CallManager:
                     writer.writerow(['电话号码', '呼叫时间', '呼叫状态', '接通时长', '录音文件', '语音识别结果'])
                 
                 # 写入所有结果
-                for result in self.call_results:
-                    writer.writerow([
-                        result['phone_number'],
-                        result['call_time'],
-                        result['status'],
-                        result.get('duration', ''),
-                        result.get('recording', ''),
-                        result.get('transcription', '')
-                    ])
+                writer.writerow([
+                    result['phone_number'],
+                    result['call_time'],
+                    result['status'],
+                    result.get('duration', ''),
+                    result.get('recording', ''),
+                    result.get('transcription', '')
+                ])
                     
             logger.info(f"呼叫结果已保存到: {file_path}")
             return True
@@ -99,9 +99,8 @@ class CallManager:
                 # 从SIPCall获取呼叫结果
                 result = call.call_result
                 # 保存结果
-                self.call_results.append(result)
                 logger.info(f"电话 {phone_number} 处理完成: 状态={result['status']}, 时长={result['duration']}")
-                return True
+                return result
             else:
                 logger.warning(f"电话 {phone_number} 拨打失败")
             
@@ -114,7 +113,7 @@ class CallManager:
                 'recording': '',
                 'transcription': ''
             }
-            self.call_results.append(failed_result)
+            return failed_result
             
         except Exception as e:
             logger.error(f"拨打电话失败: {e}")
@@ -129,9 +128,7 @@ class CallManager:
                 'recording': '',
                 'transcription': ''
             }
-            self.call_results.append(failed_result)
+            return failed_result
         finally:
             self.sip_caller.hangup()
-         
-        return False
             

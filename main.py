@@ -198,10 +198,10 @@ def process_phone_list(call_list, call_manager, whisper_manager, call_log_file, 
 
         logger.info(f"正在处理第 {i+1}/{len(call_list)} 个号码: {phone_number}")
         # 拨打电话并等待通话完成
-        call_manager.make_call_and_wait(phone_number)
+        result = call_manager.make_call_and_wait(phone_number)
         
         # 保存结果
-        call_manager.save_call_results(call_log_file)
+        call_manager.save_call_result(call_log_file, result)
         
         # 如果不是最后一个号码且未请求退出，等待一段时间
         if i < len(call_list) - 1 and not exit_event.is_set():

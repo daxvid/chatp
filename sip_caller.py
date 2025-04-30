@@ -48,32 +48,32 @@ class CustomAudioMediaPlayer(pj.AudioMediaPlayer):
 
 class SIPCall(pj.Call):
     """SIP通话类，继承自pjsua2.Call"""
-    def __init__(self, acc, whisper_manager=None, phone_number=None):
+    def __init__(self, acc, whisper_manager=None, tts_manager=None, response_manager=None, phone_number=None):
         pj.Call.__init__(self, acc)
         self.recorder = None
         self.recording_file = None
         self.whisper_manager = whisper_manager
+        self.tts_manager = tts_manager
+        self.response_manager = response_manager
         self.phone_number = phone_number
         self.audio_port = None
-        self.tts_manager = None
-        self.response_manager = None
         self.audio_media = None
         self.ep = None
         self.player = None
         self.chunks_size = 0     # 已保存的音频段数量
         self.file_list = list()  # 已分段的对话文件列表
         self.talk_list = list()  # 已转录的文本内容
-        self.call_time = datetime.now()    # 开始呼叫的时间
+        self.call_time = time.time()    # 开始呼叫的时间
         # 通话结果数据
         self.call_result = {
             'phone_number': phone_number,
-            'call_time': self.call_time.strftime('%Y-%m-%d %H:%M:%S'),
+            'start': self.call_time, # 开始呼叫时间
+            'end': self.call_time,   # 结束通话时间
             'status': '未接通',
             'duration': '',
-            'recording': '',
-            'transcription': '',
-            'start_time': self.call_time,
-            'end_time': None
+            'record': '',
+            'text': '',
+            'confirmed': None,       # 开始通话时间
         }
     
 
@@ -115,7 +115,7 @@ class SIPCall(pj.Call):
                 self.audio_media.startTransmit(recorder)
                 self.recording_file = recording_file
                 self.recorder = recorder
-                self.call_result['recording'] = recording_file
+                self.call_result['record'] = recording_file
                 logger.info(f"录音创建成功: {recording_file}")
                 return True
             except Exception as e:
@@ -209,6 +209,8 @@ class SIPCall(pj.Call):
     def onCallConfirmed(self, prm, ci):
         logger.info("通话已接通")
         # 更新通话状态为已接通
+        self.call_result['confirmed'] = time.time()
+        self.call_result['end'] = time.time()
         self.call_result['status'] = '接通'
         if not self.audio_media:
             self.audio_media = self.getAudioMedia(-1)
@@ -221,11 +223,11 @@ class SIPCall(pj.Call):
     def onCallDisconnected(self, prm, ci):
         logger.info("通话已结束")
         # 记录通话结束时间
-        self.call_result['end_time'] = datetime.now()
+        self.call_result['end'] = time.time()
     
         # 如果之前标记为接通，则计算通话时长
         if self.call_result['status'] == '接通':
-            duration = (self.call_result['end_time'] - self.call_result['start_time']).total_seconds()
+            duration = (self.call_result['end'] - self.call_result['confirmed'])
             self.call_result['duration'] = f"{duration:.1f}秒"
         
         # 停止录音
@@ -234,7 +236,7 @@ class SIPCall(pj.Call):
             # 转录通话录音并更新结果
             transcription = self.transcribe_audio()
             if transcription:
-                self.call_result['transcription'] = transcription
+                self.call_result['text'] = transcription
                 logger.info(f"转录结果: {transcription[:50]}...")
             else:
                 logger.warning("无法获取转录结果")
@@ -610,10 +612,7 @@ class SIPCaller:
             logger.info(f"SIP账户: {self.sip_config.get('username', '')}@{self.sip_config.get('server', '')}:{self.sip_config.get('port', '')}")
 
             # 创建通话对象，并传入电话号码和响应语音文件
-            call = SIPCall(self.acc, self.whisper_manager, number)
-            # 传递tts_manager和response_manager到通话对象
-            call.tts_manager = self.tts_manager
-            call.response_manager = self.response_manager
+            call = SIPCall(self.acc, self.whisper_manager, self.tts_manager, self.response_manager, number)
             
             # 设置呼叫参数
             call_param = pj.CallOpParam(True)

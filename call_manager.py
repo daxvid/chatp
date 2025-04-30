@@ -49,16 +49,17 @@ class CallManager:
                 
                 # 如果文件不存在，写入表头
                 if not file_exists:
-                    writer.writerow(['电话号码', '呼叫时间', '呼叫状态', '接通时长', '录音文件', '语音识别结果'])
+                    writer.writerow(['电话号码', '开始时间', '结束时间', '呼叫状态', '接通时长', '录音文件', '语音识别结果'])
                 
                 # 写入所有结果
                 writer.writerow([
                     result['phone_number'],
-                    result['call_time'],
+                    datetime.fromtimestamp(result['start']).strftime("%Y%m%d_%H%M%S"),
+                    datetime.fromtimestamp(result['end']).strftime("%Y%m%d_%H%M%S"),
                     result['status'],
                     result.get('duration', ''),
-                    result.get('recording', ''),
-                    result.get('transcription', '')
+                    result.get('record', ''),
+                    result.get('text', '')
                 ])
                     
             logger.info(f"呼叫结果已保存到: {file_path}")
@@ -72,7 +73,7 @@ class CallManager:
         try:
             # 拨打电话
             timeout = 600
-            call_start_time = time.time()
+            call_start = time.time()
             logger.info(f"开始拨打电话: {phone_number}")
             call = self.sip_caller.make_call(phone_number)
             
@@ -87,7 +88,7 @@ class CallManager:
                         break
                     
                     # 检查通话时间是否超时
-                    if time.time() - call_start_time > timeout:
+                    if time.time() - call_start > timeout:
                         logger.warning(f"通话时间超过{timeout}秒，强制结束")
                         sip_caller.hangup()
                         break
@@ -107,11 +108,12 @@ class CallManager:
             # 处理失败情况
             failed_result = {
                 'phone_number': phone_number,
-                'call_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'start': call_start,
+                'end': time.time(),
                 'status': '未接通',
                 'duration': '',
-                'recording': '',
-                'transcription': ''
+                'record': '',
+                'text': ''
             }
             return failed_result
             
@@ -122,11 +124,12 @@ class CallManager:
             # 记录失败结果
             failed_result = {
                 'phone_number': phone_number,
-                'call_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'start': call_start,
+                'end': time.time(),
                 'status': f'错误: {str(e)}',
                 'duration': '',
-                'recording': '',
-                'transcription': ''
+                'record': '',
+                'text': ''
             }
             return failed_result
         finally:

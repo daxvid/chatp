@@ -24,12 +24,6 @@ import json
 import torch
 from queue import Queue
 
-# 引入TTSManager
-from tts_manager import TTSManager
-# 引入WhisperManager
-from whisper_manager import WhisperManager
-# 引入ResponseManager
-from response_manager import ResponseManager
 from fix_wav_in_place import fix_wav_file_in_place
 
 # 禁用SSL证书验证
@@ -167,7 +161,6 @@ class SIPCall(pj.Call):
                 if not response_text:
                     logger.info(f"没有匹配到回复规则,播放下载地址")
                     response_text = self.response_manager.get_response("播-放-下-载-地-址")
-
                 if response_text:
                     logger.info(f"匹配到回复: {response_text}")
                     # 使用TTS生成语音
@@ -423,7 +416,7 @@ class SIPCall(pj.Call):
 
 class SIPCaller:
     """SIP呼叫管理类"""
-    def __init__(self, sip_config, tts_manager=None, whisper_manager=None):
+    def __init__(self, sip_config, tts_manager=None, whisper_manager=None, response_manager=None):
         """初始化SIP客户端"""
         self.sip_config = sip_config
         self.tts_manager = tts_manager
@@ -433,7 +426,7 @@ class SIPCaller:
         self.audio_queue = []
         
         # 初始化ResponseManager
-        self.response_manager = ResponseManager(yaml_file="conf/response.yaml")
+        self.response_manager = response_manager
         
         # PJSIP相关对象
         self.ep = None

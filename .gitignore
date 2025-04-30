@@ -13,3 +13,5 @@ MicroSIP.jpg
 conf/config.yaml
 conf/response.yaml
 *.wav
+*.yaml
+/conf

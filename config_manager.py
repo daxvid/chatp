@@ -29,6 +29,14 @@ class ConfigManager:
         """获取电话号码列表文件"""
         return self.config.get('call', {}).get('list_file', 'conf/tel.txt')
     
+    def get_response_file(self):
+        """获取呼叫响应配置文件"""
+        return self.config.get('call', {}).get('response_file', 'conf/response.yaml') 
+    
     def get_call_log_file(self):
         """获取呼叫日志文件"""
         return self.config.get('call', {}).get('log_file', 'log/call_log.csv') 
+    
+    def get_auto_caller_file(self):
+        """获取呼叫日志文件"""
+        return self.config.get('call', {}).get('auto_caller_file', 'log/auto_caller.log') 

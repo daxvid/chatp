@@ -13,6 +13,7 @@ import subprocess
 import shutil
 
 from config_manager import ConfigManager
+from response_manager import ResponseManager
 from tts_manager import TTSManager
 from whisper_manager import WhisperManager
 from sip_caller import SIPCaller
@@ -55,35 +56,46 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
-def load_configuration():
+def load_configuration(config_file):
     """加载配置文件"""
     try:
-        config_manager = ConfigManager('conf/config.yaml')
+        config_manager = ConfigManager(config_file)
         sip_config = config_manager.get_sip_config()
         call_list_file = config_manager.get_call_list_file()
+        response_file = config_manager.get_response_file()
         call_log_file = config_manager.get_call_log_file()
-        
+        auto_caller_file = config_manager.get_auto_caller_file()
+
         #logger.info(f"SIP配置: {sip_config}")
         logger.info(f"呼叫列表文件: {call_list_file}")
+        logger.info(f"呼叫响应配置文件: {response_file}")
         logger.info(f"呼叫日志文件: {call_log_file}")
-        
+        logger.info(f"自动呼叫日志文件: {auto_caller_file}")
+
         # 验证电话号码列表文件存在
         if not os.path.exists(call_list_file):
             logger.error(f"电话号码列表文件不存在: {call_list_file}")
             return None
-            
+        
+        # 验证呼叫响应配置文件存在
+        if not os.path.exists(response_file):
+            logger.error(f"呼叫响应配置文件不存在: {response_file}")
+            return None
+
         return {
             'config_manager': config_manager,
             'sip_config': sip_config,
             'call_list_file': call_list_file,
-            'call_log_file': call_log_file
+            'response_file': response_file,
+            'call_log_file': call_log_file,
+            'auto_caller_file': auto_caller_file,
         }
     except Exception as e:
         logger.error(f"加载配置失败: {e}")
         logger.error(f"详细错误: {traceback.format_exc()}")
         return None
 
-def initialize_services(sip_config):
+def initialize_services(sip_config, response_file):
     """初始化TTS, Whisper和SIP服务"""
     global sip_caller, services, exit_event
     
@@ -98,11 +110,13 @@ def initialize_services(sip_config):
         if not whisper_manager:
             logger.error("Whisper模型初始化失败")
             return None
+
+        response_manager = ResponseManager(response_file)
         
         # 初始化SIP客户端
         logger.info(f"初始化SIP客户端: {sip_config['server']}:{sip_config['port']}")
         try:
-            sip_caller = SIPCaller(sip_config, tts_manager, whisper_manager)
+            sip_caller = SIPCaller(sip_config, tts_manager, whisper_manager, response_manager)
             logger.info("SIP客户端初始化成功")
         except Exception as e:
             logger.error(f"SIP客户端初始化失败: {e}")
@@ -167,10 +181,9 @@ def process_phone_list(call_list, call_manager, whisper_manager, call_log_file, 
         # 检查是否请求退出
         if exit_event.is_set():
             logger.info("检测到退出请求，停止拨号")
-            break
-            
+            brea
+
         logger.info(f"正在处理第 {i+1}/{len(call_list)} 个号码: {phone_number}")
-        
         # 拨打电话并等待通话完成
         call_manager.make_call_and_wait(phone_number)
         
@@ -208,8 +221,13 @@ def main():
     global exit_event, services
     
     try:
+        config_file = sys.argv[1] if len(sys.argv) > 1 else 'conf/config98.yaml'
+        if not os.path.exists(config_file):
+            logger.error(f"配置文件不存在: {config_file}")
+            return 1
+        
         # 加载配置
-        config = load_configuration()
+        config = load_configuration(config_file)
         if not config:
             logger.error("无法加载配置，程序退出")
             return 1
@@ -219,7 +237,7 @@ def main():
         signal.signal(signal.SIGTERM, signal_handler)
         
         # 初始化服务
-        services = initialize_services(config['sip_config'])
+        services = initialize_services(config['sip_config'], config['response_file'])
         if not services:
             logger.error("服务初始化失败，程序退出")
             return 1

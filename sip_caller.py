@@ -244,12 +244,12 @@ class SIPCall(pj.Call):
         
         self.done = True
 
-    def hangup2(self):
+    def hangup(self):
         """挂断当前通话"""
         if self.done:
             return
         try:
-            self.hangup(pj.CallOpParam())
+            super().hangup(pj.CallOpParam())
         except Exception as e:
             logger.warning(f"挂断通话失败: {e}")
 
@@ -340,7 +340,6 @@ class SIPCall(pj.Call):
         try:
             if not self:
                 return False
-                
             ci = self.getInfo()
             return ci.state != pj.PJSIP_INV_STATE_DISCONNECTED
         except:

@@ -84,13 +84,13 @@ class CallManager:
                     # 检查退出请求
                     if self.exit_event.is_set():
                         logger.info("检测到退出请求，中断当前通话")
-                        call.hangup2()
+                        call.hangup()
                         break
                     
                     # 检查通话时间是否超时
                     if time.time() - call_start > timeout:
                         logger.warning(f"通话时间超过{timeout}秒，强制结束")
-                        call.hangup2()
+                        call.hangup()
                         break
 
                     count = call.voice_check()

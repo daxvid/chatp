@@ -10,15 +10,16 @@ import pjsua2 as pj
 logger = logging.getLogger("call_manager")
 
 class CallManager:
-    def __init__(self, sip_caller, tts_manager, whisper_manager, exit_event):
+    def __init__(self, sip_caller, tts_manager, whisper_manager, call_log_file, exit_event):
         """呼叫管理器"""
         self.sip_caller = sip_caller
         self.tts_manager = tts_manager
         self.whisper_manager = whisper_manager
+        self.call_log_file = call_log_file
+        self.exit_event = exit_event
         self.call_list = []
         self.call_results = []
         self.current_index = 0
-        self.exit_event = exit_event
         
     def load_call_list(self, file_path):
         """加载呼叫列表"""
@@ -37,14 +38,14 @@ class CallManager:
             logger.error(f"加载电话号码列表失败: {e}")
             return False
             
-    def save_call_result(self, file_path, result):
+    def save_call_result(self, result):
         """保存呼叫结果"""
         try:
             self.call_results.append(result)
             # 确定文件是否已存在
-            file_exists = os.path.exists(file_path)
+            file_exists = os.path.exists(self.call_log_file)
             
-            with open(file_path, 'a', newline='', encoding='utf-8') as f:
+            with open(self.call_log_file, 'a', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 
                 # 如果文件不存在，写入表头
@@ -62,76 +63,73 @@ class CallManager:
                     result.get('text', '--')
                 ])
                     
-            logger.info(f"呼叫结果已保存到: {file_path}")
+            logger.info(f"呼叫结果已保存到: {self.call_log_file}")
             return True
         except Exception as e:
             logger.error(f"保存呼叫结果失败: {e}")
             return False
             
-    def make_call_and_wait(self, phone_number):
+    def make_call(self, phone_number):
         """使用TTS拨打电话"""
         try:
             # 拨打电话
-            timeout = 600
-            call_start = time.time()
             logger.info(f"开始拨打电话: {phone_number}")
             call = self.sip_caller.make_call(phone_number)
-            
             # 如果呼叫建立成功，等待通话完成
             if call:
+                timeout = 600
+                call_start = time.time()
                 logger.info(f"电话 {phone_number} 呼叫建立，等待通话完成...")
                 while call.is_active():
                     # 检查退出请求
                     if self.exit_event.is_set():
                         logger.info("检测到退出请求，中断当前通话")
-                        sip_caller.hangup()
+                        call.hangup2()
                         break
                     
                     # 检查通话时间是否超时
                     if time.time() - call_start > timeout:
                         logger.warning(f"通话时间超过{timeout}秒，强制结束")
-                        sip_caller.hangup()
+                        call.hangup2()
                         break
 
                     count = call.voice_check()
                     if count == 0:
                         time.sleep(0.1)
+
+                # 等待转录完成
+                while not call.done:
+                    time.sleep(0.1)
                 
                 # 从SIPCall获取呼叫结果
                 result = call.call_result
-                # 保存结果
                 logger.info(f"电话 {phone_number} 处理完成: 状态={result['status']}, 时长={result['duration']}")
                 return result
             else:
                 logger.warning(f"电话 {phone_number} 拨打失败")
             
             # 处理失败情况
-            failed_result = {
+            return {
                 'phone_number': phone_number,
                 'start': call_start,
                 'end': time.time(),
                 'status': '未接通',
-                'duration': '',
-                'record': '',
-                'text': ''
+                'duration': '--',
+                'record': '--',
+                'text': '--'
             }
-            return failed_result
             
         except Exception as e:
             logger.error(f"拨打电话失败: {e}")
             logger.error(f"详细错误: {traceback.format_exc()}")
-            
             # 记录失败结果
-            failed_result = {
+            return {
                 'phone_number': phone_number,
                 'start': call_start,
                 'end': time.time(),
                 'status': f'错误: {str(e)}',
-                'duration': '',
-                'record': '',
-                'text': ''
+                'duration': '--',
+                'record': '--',
+                'text': '--'
             }
-            return failed_result
-        finally:
-            self.sip_caller.hangup()
             

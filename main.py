@@ -52,13 +52,8 @@ def signal_handler(sig, frame):
     global exit_event, sip_caller
     logger.info("接收到中断信号，准备安全退出...")
     exit_event.set()
-    
-    # 如果当前有通话，挂断
-    if sip_caller and sip_caller.current_call:
-        logger.info("挂断当前通话...")
-        sip_caller.hangup()
-    
     # 不立即退出，让程序正常完成清理
+    time.sleep(5)
     
 # 注册信号处理
 signal.signal(signal.SIGINT, signal_handler)
@@ -103,7 +98,7 @@ def load_configuration(config_file):
         logger.error(f"详细错误: {traceback.format_exc()}")
         return None
 
-def initialize_services(sip_config, response_file):
+def initialize_services(config):
     """初始化TTS, Whisper和SIP服务"""
     global sip_caller, services, exit_event
     
@@ -119,7 +114,8 @@ def initialize_services(sip_config, response_file):
             logger.error("Whisper模型初始化失败")
             return None
 
-        response_manager = ResponseManager(response_file)
+        sip_config = config['sip_config']
+        response_manager = ResponseManager(config['response_file'])
         
         # 初始化SIP客户端
         logger.info(f"初始化SIP客户端: {sip_config['server']}:{sip_config['port']}")
@@ -138,7 +134,7 @@ def initialize_services(sip_config, response_file):
 
         # 初始化呼叫管理器
         logger.info("初始化呼叫管理器...")
-        call_manager = CallManager(sip_caller, tts_manager, whisper_manager, exit_event)
+        call_manager = CallManager(sip_caller, tts_manager, whisper_manager, config['call_log_file'], exit_event)
         
         # 存储服务实例以便全局访问
         services = {
@@ -181,7 +177,7 @@ def wait_for_interval(interval, exit_event):
         time.sleep(1)
 
 
-def process_phone_list(call_list, call_manager, whisper_manager, call_log_file, sip_config):
+def process_phone_list(call_list, call_manager, whisper_manager, sip_config):
     """处理电话号码列表"""
     logger.info(f"共 {len(call_list)} 个号码需要处理")
     
@@ -193,10 +189,10 @@ def process_phone_list(call_list, call_manager, whisper_manager, call_log_file, 
 
         logger.info(f"正在处理第 {i+1}/{len(call_list)} 个号码: {phone_number}")
         # 拨打电话并等待通话完成
-        result = call_manager.make_call_and_wait(phone_number)
+        result = call_manager.make_call(phone_number)
         
         # 保存结果
-        call_manager.save_call_result(call_log_file, result)
+        call_manager.save_call_result(result)
         
         # 如果不是最后一个号码且未请求退出，等待一段时间
         if i < len(call_list) - 1 and not exit_event.is_set():
@@ -248,7 +244,7 @@ def main():
         signal.signal(signal.SIGTERM, signal_handler)
         
         # 初始化服务
-        services = initialize_services(config['sip_config'], config['response_file'])
+        services = initialize_services(config)
         if not services:
             logger.error("服务初始化失败，程序退出")
             return 1
@@ -263,8 +259,7 @@ def main():
             return 1
             
         # 处理电话列表
-        process_phone_list(call_list, call_manager, whisper_manager, 
-                           config['call_log_file'], config['sip_config'])
+        process_phone_list(call_list, call_manager, whisper_manager, config['sip_config'])
             
         logger.info("所有呼叫处理完成")
         return 0

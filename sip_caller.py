@@ -64,15 +64,16 @@ class SIPCall(pj.Call):
         self.file_list = list()  # 已分段的对话文件列表
         self.talk_list = list()  # 已转录的文本内容
         self.call_time = time.time()    # 开始呼叫的时间
+        self.done = False        # 是否已结束
         # 通话结果数据
         self.call_result = {
             'phone_number': phone_number,
             'start': self.call_time, # 开始呼叫时间
             'end': self.call_time,   # 结束通话时间
             'status': '未接通',
-            'duration': '',
-            'record': '',
-            'text': '',
+            'duration': '--',
+            'record': '--',
+            'text': '--',
             'confirmed': None,       # 开始通话时间
         }
     
@@ -241,8 +242,16 @@ class SIPCall(pj.Call):
             else:
                 logger.warning("无法获取转录结果")
         
-            
-        logger.info("通话已挂断")
+        self.done = True
+
+    def hangup2(self):
+        """挂断当前通话"""
+        if self.done:
+            return
+        try:
+            self.hangup(pj.CallOpParam())
+        except Exception as e:
+            logger.warning(f"挂断通话失败: {e}")
 
     def onCallState(self, prm):
         """呼叫状态改变时的回调函数"""
@@ -423,7 +432,6 @@ class SIPCaller:
         self.sip_config = sip_config
         self.tts_manager = tts_manager
         self.whisper_manager = whisper_manager
-        self.current_call = None
         self.call_history = []
         self.audio_queue = []
         
@@ -596,10 +604,6 @@ class SIPCaller:
 
     def make_call(self, number):
         """拨打电话"""
-        if self.current_call:
-            logger.warning("已有通话在进行中")
-            return None
-
         try:
             # 清理数据
             number = number.strip()
@@ -622,31 +626,12 @@ class SIPCaller:
             call.makeCall(sip_uri, call_param)
             
             # 更新当前通话
-            self.current_call = call
             logger.info("拨号请求已发送,等待呼叫状态变化...")
             return call
         except Exception as e:
             logger.error(f"拨打电话失败: {e}")
             logger.error(f"详细错误: {traceback.format_exc()}")
             return None
-
-    def hangup(self):
-        """挂断当前通话"""
-        try:
-            call = self.current_call
-            if call:
-                self.current_call = None
-                if call.isActive():
-                    call.hangup(pj.CallOpParam())
-                    logger.info("通话已挂断")
-                else:
-                    logger.info("通话已结束")
-            else:
-                logger.warning("没有正在进行的通话")
-            return True
-        except pj.Error as e:
-            logger.error(f"挂断通话失败: {e}")
-            return False
 
     def stop(self):
         """停止PJSIP"""

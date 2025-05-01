@@ -96,7 +96,7 @@ class SIPCall(pj.Call):
 
         try:
             
-            day_str = self.call_time.strftime("%Y%m%d")
+            day_str = datetime.fromtimestamp(self.call_time).strftime("%Y%m%d")
             # 创建recordings目录
             recordings_dir = f"recordings/{day_str}"
             os.makedirs(recordings_dir, exist_ok=True)

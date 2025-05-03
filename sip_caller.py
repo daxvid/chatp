@@ -60,6 +60,8 @@ class SIPCall(pj.Call):
         self.audio_media = None
         self.ep = None
         self.player = None
+        self.player_over_time = 0  # 播放完成时间
+        self.last_process_time = 0  # 最后一段音频的时间
         self.chunks_size = 0     # 已保存的音频段数量
         self.file_list = list()  # 已分段的对话文件列表
         self.talk_list = list()  # 已转录的文本内容
@@ -216,8 +218,8 @@ class SIPCall(pj.Call):
         if not self.audio_media:
             self.audio_media = self.getAudioMedia(-1)
             self.start_recording()
-            # 等待0.5秒,开始播放第一条语音
-            time.sleep(0.5)
+            # 等待1秒,开始播放第一条语音
+            time.sleep(1)
             self.response_callback("播-放-开-场-欢-迎-语")
 
 
@@ -299,6 +301,7 @@ class SIPCall(pj.Call):
             # 停止当前播放
             if self.player:
                 self.player.stopTransmit(self.audio_media)
+                self.player_over_time = time.time()
                 self.player = None
             
             # 尝试立即播放，如果可能的话
@@ -313,14 +316,17 @@ class SIPCall(pj.Call):
                     
                     # 注册播放完成回调
                     def on_playback_complete():
-                        player.stopTransmit(audio_media)
                         logger.info(f"结束播放语音: {voice_file}")
+                        player.stopTransmit(audio_media)
+                        if self.player == player:
+                            self.player_over_time = time.time()
+                            self.player = None
 
                     player.setEofCallback(on_playback_complete)
                     # 播放到通话媒体
                     player.startTransmit(audio_media)
-                    logger.info(f"开始播放语音: {voice_file}")
                     self.player = player
+                    logger.info(f"开始播放语音: {voice_file}")
                     return True
                 else:
                     logger.warning("无法获取音频媒体，播放失败")
@@ -355,7 +361,6 @@ class SIPCall(pj.Call):
         if file_size < 8*1024: 
             return 0
 
-        start_time = datetime.now()
         base_name, ext = os.path.splitext(recording_file)
         temp_file = f"{base_name}_tmp{ext}"
         if os.path.exists(temp_file):
@@ -378,12 +383,14 @@ class SIPCall(pj.Call):
             if len(chunks) <= chunks_size:
                 return 0
             
+            talking = False
             logger.info(f"时长:{len(audio)/1000}秒, 共:{len(chunks)} 段, 已处理{self.chunks_size},文件:{temp_file}")
             for i in range(chunks_size, len(chunks)):
                 chunk = chunks[i]
                 # 如果最后一段小于800ms,则表示话没说完,不保存分段
                 if i == len(chunks) - 1:
                     if len(chunk) < min_silence_len:
+                        talking = True
                         break
                     # 获取最后800ms的音频段
                     last_ms = chunk[-min_silence_len:]
@@ -405,6 +412,13 @@ class SIPCall(pj.Call):
                 count+=1
         finally:
             os.remove(temp_file)
+
+        if count == 0 and talking == False and self.player == None and self.player_over_time > 0:
+            now = time.time()
+            if  now - self.player_over_time > 3 and now - self.last_process_time > 3:
+                logger.info("双方都没有说话超过3秒,播放下载地址")
+                self.response_callback("播-放-下-载-地-址")
+
         return count
     
     def process_result(self, result):
@@ -412,6 +426,7 @@ class SIPCall(pj.Call):
         talk = ''
         try:
             if result:
+                self.last_process_time = time.time()
                 talk = result.get("text", "").strip()
                 # 如果成功识别到文本，调用回调
                 if talk and talk != '':

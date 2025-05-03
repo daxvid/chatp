@@ -1,7 +1,11 @@
 pjsua2
-openai-whisper==20240930
+openai-whisper>=20240930
 faster-whisper
 edge-tts
 pyyaml
 scikit-learn
-numpy
+numpy>=1.24.0
+torch>=2.1.0
+redis>=5.0.1
+pydub>=0.25.1
+ffmpeg-python>=0.2.0

@@ -1,6 +1,8 @@
 import os
 import time
 import csv
+import json
+import redis
 import logging
 import traceback
 import threading
@@ -10,7 +12,7 @@ import pjsua2 as pj
 logger = logging.getLogger("call_manager")
 
 class CallManager:
-    def __init__(self, sip_caller, tts_manager, whisper_manager, call_log_file, exit_event):
+    def __init__(self, sip_caller, tts_manager, whisper_manager, call_log_file, exit_event, redis_host="localhost", redis_port=6379):
         """呼叫管理器"""
         self.sip_caller = sip_caller
         self.tts_manager = tts_manager
@@ -20,6 +22,13 @@ class CallManager:
         self.call_list = []
         self.call_results = []
         self.current_index = 0
+        
+        # 初始化Redis连接
+        self.redis_client = redis.Redis(
+            host=redis_host,
+            port=redis_port,
+            decode_responses=True  # 自动解码响应为字符串
+        )
         
     def load_call_list(self, file_path):
         """加载呼叫列表"""
@@ -52,9 +61,10 @@ class CallManager:
                 if not file_exists:
                     writer.writerow(['电话号码', '开始时间', '结束时间', '呼叫状态', '接通时长', '录音文件', '转录结果'])
                 
+                phone = result['phone_number']
                 # 写入所有结果
                 writer.writerow([
-                    result['phone_number'],
+                    phone,
                     datetime.fromtimestamp(result['start']).strftime("%Y%m%d_%H%M%S"),
                     datetime.fromtimestamp(result['end']).strftime("%Y%m%d_%H%M%S"),
                     result['status'],
@@ -62,6 +72,30 @@ class CallManager:
                     result.get('record', '--'),
                     result.get('text', '--')
                 ])
+            
+            # 如果通话成功接通，将结果保存到Redis
+            if result['status'] == '接通':
+                try:
+                    # 生成唯一的通话记录ID
+                    call_id = f"call:{phone}:{int(result['start'])}"
+                    
+                    # 准备要保存的数据
+                    call_data = {
+                        'phone': phone,
+                        'start': datetime.fromtimestamp(result['start']).isoformat(),
+                        'end': datetime.fromtimestamp(result['end']).isoformat(),
+                        'status': result['status'],
+                        'duration': result.get('duration', '0'),
+                        'record': result.get('record', '--'),
+                        'text': result.get('text', '--'),
+                        'confirmed': datetime.fromtimestamp(result['confirmed']).isoformat() if result.get('confirmed') else None
+                    }
+                    
+                    # 保存到Redis
+                    self.redis_client.set(call_id, json.dumps(call_data, ensure_ascii=False))
+                    logger.info(f"通话结果已保存到Redis: {call_id}")
+                except Exception as e:
+                    logger.error(f"保存通话结果到Redis失败: {e}")
                     
             logger.info(f"呼叫结果已保存到: {self.call_log_file}")
             return True

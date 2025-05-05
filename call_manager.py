@@ -6,13 +6,14 @@ import redis
 import logging
 import traceback
 import threading
+import requests
 from datetime import datetime
 import pjsua2 as pj
 
 logger = logging.getLogger("call_manager")
 
 class CallManager:
-    def __init__(self, sip_caller, tts_manager, whisper_manager, call_log_file, exit_event, redis_host="localhost", redis_port=6379):
+    def __init__(self, sip_caller, tts_manager, whisper_manager, call_log_file, exit_event, redis_host="localhost", redis_port=6379, telegram_config=None):
         """呼叫管理器"""
         self.sip_caller = sip_caller
         self.tts_manager = tts_manager
@@ -30,6 +31,34 @@ class CallManager:
             decode_responses=True  # 自动解码响应为字符串
         )
         
+        # Telegram配置
+        self.telegram_config = telegram_config or {}
+        self.telegram_bot_token = self.telegram_config.get('bot_token')
+        self.telegram_chat_id = self.telegram_config.get('chat_id')
+        
+    def send_telegram_message(self, message):
+        """发送Telegram消息
+        
+        Args:
+            message: 要发送的消息内容
+        """
+        if not self.telegram_bot_token or not self.telegram_chat_id:
+            logger.warning("Telegram配置不完整，无法发送消息")
+            return False
+            
+        try:
+            url = f"https://api.telegram.org/bot{self.telegram_bot_token}/sendMessage"
+            data = {
+                "chat_id": self.telegram_chat_id,
+                "text": message
+            }
+            response = requests.post(url, data=data)
+            response.raise_for_status()
+            return True
+        except Exception as e:
+            logger.error(f"发送Telegram消息失败: {e}")
+            return False
+            
     def load_call_list(self, file_path):
         """加载呼叫列表"""
         try:
@@ -73,7 +102,7 @@ class CallManager:
                     result.get('text', '--')
                 ])
             
-            # 如果通话成功接通，将结果保存到Redis
+            # 如果通话成功接通，将结果保存到Redis并发送Telegram通知
             if result['status'] == '接通':
                 try:
                     # 生成唯一的通话记录ID
@@ -94,8 +123,19 @@ class CallManager:
                     # 保存到Redis
                     self.redis_client.set(call_id, json.dumps(call_data, ensure_ascii=False))
                     logger.info(f"通话结果已保存到Redis: {call_id}")
+                    
+                    # 发送Telegram通知
+                    message = (
+                        f"📞 新通话记录\n\n"
+                        f"📱 电话号码: {phone}\n"
+                        f"⏱ 通话时长: {result.get('duration', '0')}\n"
+                        f"📝 转录内容: {result.get('text', '--')[:100]}...\n"
+                        f"🔗 录音文件: {result.get('record', '--')}"
+                    )
+                    self.send_telegram_message(message)
+                    
                 except Exception as e:
-                    logger.error(f"保存通话结果到Redis失败: {e}")
+                    logger.error(f"保存通话结果到Redis或发送Telegram通知失败: {e}")
                     
             logger.info(f"呼叫结果已保存到: {self.call_log_file}")
             return True

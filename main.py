@@ -140,7 +140,7 @@ def initialize_services(config):
 
         # 初始化呼叫管理器
         logger.info("初始化呼叫管理器...")
-        call_manager = CallManager(sip_caller, tts_manager, whisper_manager, config['call_log_file'], exit_event)
+        call_manager = CallManager(sip_caller, tts_manager, whisper_manager, config['call_log_file'], exit_event, config['telegram_config'])
         
         # 存储服务实例以便全局访问
         services = {

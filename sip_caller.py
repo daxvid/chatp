@@ -390,7 +390,7 @@ class SIPCall(pj.Call):
                 return 0
             
             talking = False
-            logger.info(f"时长:{len(audio)/1000}秒, 共:{len(chunks)} 段, 已处理{self.chunks_size},文件:{temp_file}")
+            print(f"时长:{len(audio)/1000}秒, 共:{len(chunks)} 段, 已处理{self.chunks_size},文件:{temp_file}")
             for i in range(chunks_size, len(chunks)):
                 chunk = chunks[i]
                 # 如果最后一段小于800ms,则表示话没说完,不保存分段
@@ -482,8 +482,8 @@ class SIPCaller:
             
             # 配置PJSIP
             ep_cfg = pj.EpConfig()
-            ep_cfg.logConfig.level = 4  # 日志级别
-            ep_cfg.logConfig.consoleLevel = 4
+            ep_cfg.logConfig.level = 0  # 设置日志级别为0（禁用）
+            ep_cfg.logConfig.consoleLevel = 0  # 设置控制台日志级别为0（禁用）
             
             # 媒体配置
             ep_cfg.medConfig.noVad = True  # 禁用VAD（语音活动检测）

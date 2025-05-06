@@ -131,10 +131,12 @@ class CallManager:
                         #将电话的第4/5/6位数字隐藏
                         phone_hide = phone[:3] + '***' + phone[6:]
                         message = (
-                            f"🟢 电话: {phone_hide}\n"
-                            f"⏱ 时长: {result.get('duration', '60')}\n"
-                        )
-                        self.send_telegram_message(message)
+                            f"🟢 通话成功: {phone_hide}"
+                        )1
+                        if self.send_telegram_message(message):
+                            logger.info(f"发送TG消息成功: {message}")
+                        else:
+                            logger.error(f"发送TG消息失败: {message}")
                     
                 except Exception as e:
                     logger.error(f"保存通话结果到Redis或发送Telegram通知失败: {e}")
@@ -171,7 +173,7 @@ class CallManager:
 
                     count = call.voice_check()
                     if count == 0:
-                        time.sleep(0.1)
+                        time.sleep(0.15)
 
                 # 等待转录完成
                 while not call.done:

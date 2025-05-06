@@ -68,12 +68,16 @@ def load_configuration(config_file):
         response_file = config_manager.get_response_file()
         call_log_file = config_manager.get_call_log_file()
         auto_caller_file = config_manager.get_auto_caller_file()
+        telegram_config = config_manager.get_telegram_config()
+        whitelist_ips = config_manager.get_whitelist_ips()
 
         #logger.info(f"SIP配置: {sip_config}")
         logger.info(f"呼叫列表文件: {call_list_file}")
         logger.info(f"呼叫响应配置文件: {response_file}")
         logger.info(f"呼叫日志文件: {call_log_file}")
         logger.info(f"自动呼叫日志文件: {auto_caller_file}")
+        logger.info(f"Telegram配置: {telegram_config}")
+        logger.info(f"白名单IP: {whitelist_ips}")
 
         # 验证电话号码列表文件存在
         if not os.path.exists(call_list_file):
@@ -92,6 +96,8 @@ def load_configuration(config_file):
             'response_file': response_file,
             'call_log_file': call_log_file,
             'auto_caller_file': auto_caller_file,
+            'telegram_config': telegram_config,
+            'whitelist_ips': whitelist_ips,
         }
     except Exception as e:
         logger.error(f"加载配置失败: {e}")
@@ -250,7 +256,7 @@ def main():
         if current_ip not in whitelist_ips:
             logger.error(f"当前IP {current_ip} 不在白名单中, 程序退出")
             return 1
-            
+
         # 初始化日志
         setup_logging(config.get('auto_caller_file'))
 

@@ -44,3 +44,7 @@ class ConfigManager:
     def get_telegram_config(self):
         """获取Telegram配置"""
         return self.config.get('telegram', {})
+
+    def get_whitelist_ips(self):
+        """获取白名单IP"""
+        return self.config.get('whitelist_ips', [])

@@ -213,12 +213,21 @@ class WhisperTranscriptionWorker:
 
 def main():
     """主函数"""
+    import multiprocessing
+
     # 从环境变量获取配置
     model_size = os.getenv("WHISPER_MODEL_SIZE", "turbo")
     model_dir = os.getenv("WHISPER_MODEL_DIR", "models/whisper")
     redis_host = os.getenv("REDIS_HOST", "localhost")
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
-    max_workers = int(os.getenv("WHISPER_MAX_WORKERS", "4"))
+    max_workers = int(os.getenv("WHISPER_MAX_WORKERS", "0"))
+
+    if max_workers == 0:
+        # 获取CPU核心数
+        cpu_count = multiprocessing.cpu_count()
+        max_workers = cpu_count // 2
+        if max_workers == 0:
+            max_workers = 1
     
     # 创建并运行转录工作进程
     worker = WhisperTranscriptionWorker(

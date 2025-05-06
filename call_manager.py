@@ -153,7 +153,7 @@ class CallManager:
             call = self.sip_caller.make_call(phone_number)
             # 如果呼叫建立成功，等待通话完成
             if call:
-                timeout = 600
+                timeout = 240
                 call_start = time.time()
                 logger.info(f"电话 {phone_number} 呼叫建立，等待通话完成...")
                 while call.is_active():

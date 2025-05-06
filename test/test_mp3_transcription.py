@@ -36,7 +36,7 @@ def transcribe_directory(input_dir, output_file=None, file_types=None):
         file_types = ['.mp3', '.wav']
     
     # Initialize Whisper with turbo model
-    whisper_manager = WhisperManager(model_size="turbo", model_dir="../models/whisper")
+    whisper_manager = WhisperManager()
     
     # Find all audio files with specified extensions
     audio_files = []

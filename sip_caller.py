@@ -60,7 +60,7 @@ class SIPCall(pj.Call):
         self.audio_media = None
         self.ep = None
         self.player = None
-        self.player_over_time = 0  # 播放完成时间
+        self.play_over_time = 0  # 播放完成时间
         self.last_process_time = 0  # 最后一段音频的时间
         self.chunks_size = 0     # 已保存的音频段数量
         self.file_list = list()  # 已分段的对话文件列表
@@ -307,7 +307,7 @@ class SIPCall(pj.Call):
             # 停止当前播放
             if self.player:
                 self.player.stopTransmit(self.audio_media)
-                self.player_over_time = time.time()
+                self.play_over_time = time.time()
                 self.player = None
             
             # 尝试立即播放，如果可能的话
@@ -325,7 +325,7 @@ class SIPCall(pj.Call):
                         logger.info(f"结束播放语音: {voice_file}")
                         player.stopTransmit(audio_media)
                         if self.player == player:
-                            self.player_over_time = time.time()
+                            self.play_over_time = time.time()
                             self.player = None
 
                     player.setEofCallback(on_playback_complete)
@@ -419,9 +419,9 @@ class SIPCall(pj.Call):
         finally:
             os.remove(temp_file)
 
-        if count == 0 and talking == False and self.player == None and self.player_over_time > 0:
+        if count == 0 and talking == False and self.player == None and self.play_over_time > 0:
             now = time.time()
-            if  now - self.player_over_time > 3 and now - self.last_process_time > 3:
+            if  now - self.play_over_time > 3 and now - self.last_process_time > 3:
                 logger.info("双方都没有说话超过3秒,播放下载地址")
                 self.response_callback("播-放-下-载-地-址")
 

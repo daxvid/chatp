@@ -46,6 +46,7 @@ logger = logging.getLogger("main")
 exit_event = Event()
 sip_caller = None
 services = None
+config = None
 
 # 信号处理函数
 def signal_handler(sig, frame):
@@ -63,21 +64,13 @@ def load_configuration(config_file):
     """加载配置文件"""
     try:
         config_manager = ConfigManager(config_file)
-        sip_config = config_manager.get_sip_config()
+        
         call_list_file = config_manager.get_call_list_file()
         response_file = config_manager.get_response_file()
-        call_log_file = config_manager.get_call_log_file()
-        auto_caller_file = config_manager.get_auto_caller_file()
-        telegram_config = config_manager.get_telegram_config()
-        whitelist_ips = config_manager.get_whitelist_ips()
 
         #logger.info(f"SIP配置: {sip_config}")
         print(f"呼叫列表文件: {call_list_file}")
         print(f"呼叫响应配置文件: {response_file}")
-        print(f"呼叫日志文件: {call_log_file}")
-        print(f"自动呼叫日志文件: {auto_caller_file}")
-        print(f"Telegram配置: {telegram_config}")
-        print(f"白名单IP: {whitelist_ips}")
 
         # 验证电话号码列表文件存在
         if not os.path.exists(call_list_file):
@@ -88,25 +81,15 @@ def load_configuration(config_file):
         if not os.path.exists(response_file):
             print(f"呼叫响应配置文件不存在: {response_file}")
             return None
-
-        return {
-            'config_manager': config_manager,
-            'sip_config': sip_config,
-            'call_list_file': call_list_file,
-            'response_file': response_file,
-            'call_log_file': call_log_file,
-            'auto_caller_file': auto_caller_file,
-            'telegram_config': telegram_config,
-            'whitelist_ips': whitelist_ips,
-        }
+        return config_manager
     except Exception as e:
         print(f"加载配置失败: {e}")
         print(f"详细错误: {traceback.format_exc()}")
         return None
 
-def initialize_services(config):
+def initialize_services():
     """初始化TTS, Whisper和SIP服务"""
-    global sip_caller, services, exit_event
+    global sip_caller, services, exit_event, config
     
     try:
         # 初始化TTS引擎
@@ -120,8 +103,8 @@ def initialize_services(config):
             logger.error("Whisper模型初始化失败")
             return None
 
-        sip_config = config['sip_config']
-        response_manager = ResponseManager(config['response_file'])
+        sip_config = config.get_sip_config()
+        response_manager = ResponseManager(config.get_response_file())
         
         # 初始化SIP客户端
         logger.info(f"初始化SIP客户端: {sip_config['server']}:{sip_config['port']}")
@@ -140,7 +123,9 @@ def initialize_services(config):
 
         # 初始化呼叫管理器
         logger.info("初始化呼叫管理器...")
-        call_manager = CallManager(sip_caller, tts_manager, whisper_manager, config['call_log_file'], exit_event, config['telegram_config'])
+        call_log_file=config.get_call_log_file()
+        telegram_config=config.get_telegram_config()
+        call_manager = CallManager(sip_caller, tts_manager, whisper_manager, call_log_file, exit_event, telegram_config)
         
         # 存储服务实例以便全局访问
         services = {
@@ -228,7 +213,7 @@ def cleanup_resources():
 
 def main():
     """主程序入口点"""
-    global exit_event, services
+    global exit_event, services, config
     
     try:
         config_file = sys.argv[1] if len(sys.argv) > 1 else 'conf/config98.yaml'
@@ -254,21 +239,21 @@ def main():
 
         # 清理IP地址中的不可见字符
         current_ip = current_ip.strip()
-        whitelist_ips = [ip.strip() for ip in config['whitelist_ips']]
+        whitelist_ips = config.get_whitelist_ips()
 
         if current_ip not in whitelist_ips:
             print(f"当前IP {current_ip} 不在白名单中, 程序退出")
             return 1
 
         # 初始化日志
-        setup_logging(config.get('auto_caller_file'))
+        setup_logging(config.get_auto_caller_file())
 
         # 初始化信号处理
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
         
         # 初始化服务
-        services = initialize_services(config)
+        services = initialize_services()
         if not services:
             logger.error("服务初始化失败，程序退出")
             return 1
@@ -277,13 +262,13 @@ def main():
         whisper_manager = services['whisper_manager']
             
         # 准备呼叫列表
-        call_list = prepare_call_list(call_manager, config['call_list_file'])
+        call_list = prepare_call_list(call_manager, config.get_call_list_file())
         if not call_list:
             logger.error("呼叫列表为空或加载失败，程序退出")
             return 1
             
         # 处理电话列表
-        process_phone_list(call_list, call_manager, whisper_manager, config['sip_config'])
+        process_phone_list(call_list, call_manager, whisper_manager, config_get_sip_config())
             
         logger.info("所有呼叫处理完成")
         return 0

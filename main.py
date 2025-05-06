@@ -198,14 +198,7 @@ def cleanup_resources():
         if sip_caller:
             sip_caller.stop()
             sip_caller = None
-            
-        # 关闭WhisperManager
-        if 'services' in globals() and services and 'whisper_manager' in services:
-            whisper_manager = services.get('whisper_manager')
-            if hasattr(whisper_manager, 'shutdown'):
-                logger.info("关闭WhisperManager线程池...")
-                whisper_manager.shutdown()
-                
+                            
         logger.info("资源清理完成")
     except Exception as e:
         logger.error(f"清理资源时出错: {e}")

@@ -119,7 +119,7 @@ class CallManager:
                         'record': result.get('record', '--'),
                         'text': result.get('text', '--'),
                         'confirmed': datetime.fromtimestamp(result['confirmed']).isoformat() if result.get('confirmed') else None,
-                        'play_url_time': play_url_time
+                        'play_url_time': datetime.fromtimestamp(play_url_time).isoformat() if play_url_time else None
                     }
                     
                     # 保存到Redis

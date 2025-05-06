@@ -74,8 +74,3 @@ class WhisperManager:
             logger.error(f"提交转录任务失败: {e}")
             return None
             
-    def shutdown(self):
-        """关闭管理器"""
-        # 如果使用GPU，清理缓存
-        if self.use_gpu:
-            torch.cuda.empty_cache()

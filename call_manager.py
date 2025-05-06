@@ -13,7 +13,7 @@ import pjsua2 as pj
 logger = logging.getLogger("call_manager")
 
 class CallManager:
-    def __init__(self, sip_caller, tts_manager, whisper_manager, call_log_file, exit_event, redis_host="localhost", redis_port=6379, telegram_config=None):
+    def __init__(self, sip_caller, tts_manager, whisper_manager, call_log_file, exit_event, telegram_config, redis_host="localhost", redis_port=6379):
         """呼叫管理器"""
         self.sip_caller = sip_caller
         self.tts_manager = tts_manager
@@ -105,10 +105,11 @@ class CallManager:
             
             # 如果通话成功接通，将结果保存到Redis并发送Telegram通知
             if result['status'] == '接通':
+                # 生成唯一的通话记录ID
+                call_id = f"call:{phone}:{int(result['start'])}"
+                play_url_time = result.get('play_url_time', None)
+                confirmed = result.get('confirmed', None)
                 try:
-                    # 生成唯一的通话记录ID
-                    call_id = f"call:{phone}:{int(result['start'])}"
-                    play_url_time = result.get('play_url_time', None)
                     # 准备要保存的数据
                     call_data = {
                         'phone': phone,
@@ -118,16 +119,21 @@ class CallManager:
                         'duration': result.get('duration', '0'),
                         'record': result.get('record', '--'),
                         'text': result.get('text', '--'),
-                        'confirmed': datetime.fromtimestamp(result['confirmed']).isoformat() if result.get('confirmed') else None,
-                        'play_url_time': datetime.fromtimestamp(play_url_time).isoformat() if play_url_time else None
                     }
+                    if confirmed:
+                        call_data['confirmed'] = datetime.fromtimestamp(confirmed).isoformat()
+                    if play_url_time:
+                        call_data['play_url_time'] = datetime.fromtimestamp(play_url_time).isoformat()  
                     
                     # 保存到Redis
                     self.redis_client.set(call_id, json.dumps(call_data, ensure_ascii=False))
-                    logger.info(f"通话结果已保存到Redis: {call_id}")
-                    
-                    # 如果有播放下载地址,则发送Telegram通知
-                    if play_url_time:
+                    logger.info(f"通话已保存到Redis: {call_id}")
+                except Exception as e:
+                    logger.error(f"保存通话到Redis失败: {e}")
+
+                # 如果有播放下载地址,则发送Telegram通知
+                if play_url_time:
+                    try:
                         #将电话的第4/5/6位数字隐藏
                         phone_hide = phone[:3] + '***' + phone[6:]
                         message = f"🟢 通话成功: {phone_hide}"
@@ -135,10 +141,9 @@ class CallManager:
                             logger.info(f"发送TG消息成功: {message}")
                         else:
                             logger.error(f"发送TG消息失败: {message}")
-                    
-                except Exception as e:
-                    logger.error(f"保存通话结果到Redis或发送TG通知失败: {e}")
-                    
+                    except Exception as e:
+                        logger.error(f"发送TG消息失败: {e}")
+
             logger.info(f"呼叫结果已保存到: {self.call_log_file}")
             return True
         except Exception as e:

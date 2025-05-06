@@ -34,7 +34,7 @@ class CallManager:
         # Telegram配置
         self.telegram_config = telegram_config or {}
         self.telegram_bot_token = self.telegram_config.get('bot_token')
-        self.telegram_chat_id = self.telegram_config.get('chat_id')
+        self.telegram_chat_ids = self.telegram_config.get('chat_ids')
         
     def send_telegram_message(self, message):
         """发送Telegram消息
@@ -42,18 +42,19 @@ class CallManager:
         Args:
             message: 要发送的消息内容
         """
-        if not self.telegram_bot_token or not self.telegram_chat_id:
+        if not self.telegram_bot_token or not self.telegram_chat_ids:
             logger.warning("Telegram配置不完整，无法发送消息")
             return False
             
         try:
             url = f"https://api.telegram.org/bot{self.telegram_bot_token}/sendMessage"
-            data = {
-                "chat_id": self.telegram_chat_id,
-                "text": message
-            }
-            response = requests.post(url, data=data)
-            response.raise_for_status()
+            for chat_id in self.telegram_chat_ids:
+                data = {
+                    "chat_id": chat_id,
+                    "text": message
+                }
+                response = requests.post(url, data=data)
+                response.raise_for_status()
             return True
         except Exception as e:
             logger.error(f"发送Telegram消息失败: {e}")
@@ -107,7 +108,7 @@ class CallManager:
                 try:
                     # 生成唯一的通话记录ID
                     call_id = f"call:{phone}:{int(result['start'])}"
-                    
+                    url_time = result.get('play_url_time', None)
                     # 准备要保存的数据
                     call_data = {
                         'phone': phone,
@@ -117,22 +118,23 @@ class CallManager:
                         'duration': result.get('duration', '0'),
                         'record': result.get('record', '--'),
                         'text': result.get('text', '--'),
-                        'confirmed': datetime.fromtimestamp(result['confirmed']).isoformat() if result.get('confirmed') else None
+                        'confirmed': datetime.fromtimestamp(result['confirmed']).isoformat() if result.get('confirmed') else None,
+                        'play_url_time': url_time
                     }
                     
                     # 保存到Redis
                     self.redis_client.set(call_id, json.dumps(call_data, ensure_ascii=False))
                     logger.info(f"通话结果已保存到Redis: {call_id}")
                     
-                    # 发送Telegram通知
-                    message = (
-                        f"📞 新通话记录\n\n"
-                        f"📱 电话号码: {phone}\n"
-                        f"⏱ 通话时长: {result.get('duration', '0')}\n"
-                        f"📝 转录内容: {result.get('text', '--')[:100]}...\n"
-                        f"🔗 录音文件: {result.get('record', '--')}"
-                    )
-                    self.send_telegram_message(message)
+                    # 如果有播放下载地址,则发送Telegram通知
+                    if url_time:
+                        #将电话的第4/5/6位数字隐藏
+                        phone_hide = phone[:3] + '***' + phone[6:]
+                        message = (
+                            f"🟢 电话: {phone_hide}\n"
+                            f"⏱ 时长: {result.get('duration', '60')}\n"
+                        )
+                        self.send_telegram_message(message)
                     
                 except Exception as e:
                     logger.error(f"保存通话结果到Redis或发送Telegram通知失败: {e}")

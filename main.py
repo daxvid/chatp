@@ -268,7 +268,7 @@ def main():
             return 1
             
         # 处理电话列表
-        process_phone_list(call_list, call_manager, whisper_manager, config_get_sip_config())
+        process_phone_list(call_list, call_manager, whisper_manager, config.get_sip_config())
             
         logger.info("所有呼叫处理完成")
         return 0

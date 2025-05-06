@@ -236,6 +236,21 @@ def main():
             logger.error("无法加载配置，程序退出")
             return 1
         
+        # 获取当前外网IP
+        try:
+            response = subprocess.check_output(['curl', 'ifconfig.me'], stderr=subprocess.STDOUT)
+            current_ip = response.decode().strip()
+            logger.info(f"当前外网IP: {current_ip}")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"获取外网IP失败: {e.output.decode()}")
+            return 1
+
+        # 检查是否在白名单中
+        whitelist_ips = config.get('whitelist_ips', [])
+        if current_ip not in whitelist_ips:
+            logger.error(f"当前IP {current_ip} 不在白名单中, 程序退出")
+            return 1
+            
         # 初始化日志
         setup_logging(config.get('auto_caller_file'))
 

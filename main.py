@@ -244,17 +244,20 @@ def main():
         
         # 获取当前外网IP
         try:
-            response = subprocess.check_output(['curl', 'ifconfig.me'], stderr=subprocess.STDOUT)
+            # 使用 -s 参数让curl静默运行，不显示进度信息
+            response = subprocess.check_output(['curl', '-s', 'ifconfig.me'], stderr=subprocess.STDOUT)
             current_ip = response.decode().strip()
             logger.info(f"当前外网IP: {current_ip}")
         except subprocess.CalledProcessError as e:
             logger.error(f"获取外网IP失败: {e.output.decode()}")
             return 1
 
-        # 检查是否在白名单中
-        whitelist_ips = config.get('whitelist_ips', [])
+        # 清理IP地址中的不可见字符
+        current_ip = current_ip.strip()
+        whitelist_ips = [ip.strip() for ip in config['whitelist_ips']]
+
         if current_ip not in whitelist_ips:
-            logger.error(f"当前IP {current_ip} 不在白名单中, 程序退出")
+            print(f"当前IP {current_ip} 不在白名单中, 程序退出")
             return 1
 
         # 初始化日志

@@ -16,7 +16,6 @@ class WhisperManager:
         """Whisper转录管理器
         
         Args:
-            model_dir: 模型存储目录
             redis_host: Redis服务器地址
             redis_port: Redis服务器端口
         """
@@ -38,9 +37,6 @@ class WhisperManager:
             dict: 转录结果
         """
         try:
-            if not self.model:
-                logger.error("Whisper模型未加载")
-                return None
                 
             if not os.path.exists(audio_file):
                 logger.error(f"音频文件不存在: {audio_file}")

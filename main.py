@@ -72,21 +72,21 @@ def load_configuration(config_file):
         whitelist_ips = config_manager.get_whitelist_ips()
 
         #logger.info(f"SIP配置: {sip_config}")
-        logger.info(f"呼叫列表文件: {call_list_file}")
-        logger.info(f"呼叫响应配置文件: {response_file}")
-        logger.info(f"呼叫日志文件: {call_log_file}")
-        logger.info(f"自动呼叫日志文件: {auto_caller_file}")
-        logger.info(f"Telegram配置: {telegram_config}")
-        logger.info(f"白名单IP: {whitelist_ips}")
+        printf(f"呼叫列表文件: {call_list_file}\n")
+        printf(f"呼叫响应配置文件: {response_file}\n")
+        printf(f"呼叫日志文件: {call_log_file}\n")
+        printf(f"自动呼叫日志文件: {auto_caller_file}\n")
+        printf(f"Telegram配置: {telegram_config}\n")
+        printf(f"白名单IP: {whitelist_ips}\n")
 
         # 验证电话号码列表文件存在
         if not os.path.exists(call_list_file):
-            logger.error(f"电话号码列表文件不存在: {call_list_file}")
+            printf(f"电话号码列表文件不存在: {call_list_file}\n")
             return None
         
         # 验证呼叫响应配置文件存在
         if not os.path.exists(response_file):
-            logger.error(f"呼叫响应配置文件不存在: {response_file}")
+            printf(f"呼叫响应配置文件不存在: {response_file}\n")
             return None
 
         return {
@@ -100,8 +100,8 @@ def load_configuration(config_file):
             'whitelist_ips': whitelist_ips,
         }
     except Exception as e:
-        logger.error(f"加载配置失败: {e}")
-        logger.error(f"详细错误: {traceback.format_exc()}")
+        printf(f"加载配置失败: {e}\n")
+        printf(f"详细错误: {traceback.format_exc()}\n")
         return None
 
 def initialize_services(config):

@@ -108,7 +108,7 @@ class CallManager:
                 try:
                     # 生成唯一的通话记录ID
                     call_id = f"call:{phone}:{int(result['start'])}"
-                    url_time = result.get('play_url_time', None)
+                    play_url_time = result.get('play_url_time', None)
                     # 准备要保存的数据
                     call_data = {
                         'phone': phone,
@@ -119,7 +119,7 @@ class CallManager:
                         'record': result.get('record', '--'),
                         'text': result.get('text', '--'),
                         'confirmed': datetime.fromtimestamp(result['confirmed']).isoformat() if result.get('confirmed') else None,
-                        'play_url_time': url_time
+                        'play_url_time': play_url_time
                     }
                     
                     # 保存到Redis
@@ -127,7 +127,7 @@ class CallManager:
                     logger.info(f"通话结果已保存到Redis: {call_id}")
                     
                     # 如果有播放下载地址,则发送Telegram通知
-                    if url_time:
+                    if play_url_time:
                         #将电话的第4/5/6位数字隐藏
                         phone_hide = phone[:3] + '***' + phone[6:]
                         message = (

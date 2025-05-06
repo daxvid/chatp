@@ -67,7 +67,6 @@ class SIPCall(pj.Call):
         self.talk_list = list()  # 已转录的文本内容
         self.call_time = time.time()    # 开始呼叫的时间
         self.done = False        # 是否已结束
-        self.play_url_time = None # 播放下载地址的时间
         # 通话结果数据
         self.call_result = {
             'phone_number': phone_number,
@@ -78,6 +77,7 @@ class SIPCall(pj.Call):
             'record': '--',
             'text': '--',
             'confirmed': None,       # 开始通话时间
+            'play_url_time': None # 播放下载地址的时间
         }
     
 
@@ -175,8 +175,8 @@ class SIPCall(pj.Call):
                         if voice_file and os.path.exists(voice_file):
                             if self.play_response_direct(voice_file):
                                 if "点vip" in response_text or "点tv" in response_text or "点cc" in response_text:
-                                    if self.play_url_time is None:
-                                        self.play_url_time = time.time()
+                                    if  self.call_result['play_url_time'] is None:
+                                         self.call_result['play_url_time'] = time.time()
 
                         else:
                             logger.error(f"生成TTS文件失败")

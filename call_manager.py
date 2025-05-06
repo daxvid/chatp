@@ -130,16 +130,14 @@ class CallManager:
                     if play_url_time:
                         #将电话的第4/5/6位数字隐藏
                         phone_hide = phone[:3] + '***' + phone[6:]
-                        message = (
-                            f"🟢 通话成功: {phone_hide}"
-                        )1
+                        message = f"🟢 通话成功: {phone_hide}"
                         if self.send_telegram_message(message):
                             logger.info(f"发送TG消息成功: {message}")
                         else:
                             logger.error(f"发送TG消息失败: {message}")
                     
                 except Exception as e:
-                    logger.error(f"保存通话结果到Redis或发送Telegram通知失败: {e}")
+                    logger.error(f"保存通话结果到Redis或发送TG通知失败: {e}")
                     
             logger.info(f"呼叫结果已保存到: {self.call_log_file}")
             return True

@@ -1,6 +1,7 @@
 import os
 import logging
 import time
+import csv
 import ssl
 import whisper
 import edge_tts

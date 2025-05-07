@@ -73,7 +73,7 @@ class SIPCall(pj.Call):
             'start': self.call_time, # 开始呼叫时间
             'end': self.call_time,   # 结束通话时间
             'status': '未接通',
-            'duration': '--',
+            'duration': 0,
             'record': '--',
             'text': '--',
             'confirmed': None,       # 开始通话时间

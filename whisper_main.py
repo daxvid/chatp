@@ -158,10 +158,10 @@ class WhisperTranscriptionWorker:
                     })
                 )
             
-            logger.info(f"任务 {task_id} 处理完成")
+            logger.info(f"文件 {audio_file} 处理完成")
             
         except Exception as e:
-            logger.error(f"处理任务 {task_id} 时发生错误: {e}")
+            logger.error(f"处理文件 {audio_file} 时发生错误: {e}")
             # 确保错误结果也被写入Redis
             self.redis_client.set(
                 f"whisper_result:{task_id}",

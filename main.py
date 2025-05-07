@@ -123,8 +123,8 @@ def initialize_services():
 
         # 初始化呼叫管理器
         logger.info("初始化呼叫管理器...")
-        call_log_file=config.get_call_log_file()
-        telegram_config=config.get_telegram_config()
+        call_log_file = config.get_call_log_file()
+        telegram_config = config.get_telegram_config()
         call_manager = CallManager(sip_caller, tts_manager, whisper_manager, call_log_file, exit_event, telegram_config)
         
         # 存储服务实例以便全局访问

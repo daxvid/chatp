@@ -259,6 +259,16 @@ def main():
         if not call_list:
             logger.error("呼叫列表为空或加载失败，程序退出")
             return 1
+
+        call_log_file = config.get_call_log_file()
+        if os.path.exists(call_log_file):
+            with open(call_log_file, 'r', encoding='utf-8') as f:
+                csv_reader = csv.reader(f, delimiter='\t')
+                next(csv_reader)  # 跳过表头
+                called_numbers = [row[0] for row in csv_reader]
+                # 从call_list中删除已经拨打过的电话号码
+                call_list = [number for number in call_list if number not in called_numbers]
+                logger.info(f"已拨打过的电话号码: {called_numbers}")
             
         # 处理电话列表
         process_phone_list(call_list, call_manager, whisper_manager, config.get_sip_config())

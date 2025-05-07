@@ -48,14 +48,14 @@ class CustomAudioMediaPlayer(pj.AudioMediaPlayer):
 
 class SIPCall(pj.Call):
     """SIP通话类，继承自pjsua2.Call"""
-    def __init__(self, acc, whisper_manager=None, tts_manager=None, response_manager=None, phone_number=None):
+    def __init__(self, acc, whisper_manager=None, tts_manager=None, response_manager=None, phone=None):
         pj.Call.__init__(self, acc)
         self.recorder = None
         self.recording_file = None
         self.whisper_manager = whisper_manager
         self.tts_manager = tts_manager
         self.response_manager = response_manager
-        self.phone_number = phone_number
+        self.phone = phone
         self.audio_port = None
         self.audio_media = None
         self.ep = None
@@ -69,7 +69,7 @@ class SIPCall(pj.Call):
         self.done = False        # 是否已结束
         # 通话结果数据
         self.call_result = {
-            'phone_number': phone_number,
+            'phone': phone,
             'start': self.call_time, # 开始呼叫时间
             'end': self.call_time,   # 结束通话时间
             'status': '未接通',
@@ -105,7 +105,7 @@ class SIPCall(pj.Call):
             os.makedirs(recordings_dir, exist_ok=True)
             
             # 清理电话号码中的特殊字符，只保留数字
-            clean_number = ''.join(filter(str.isdigit, self.phone_number))
+            clean_number = ''.join(filter(str.isdigit, self.phone))
             
             # 创建录音文件名，格式：电话号码_日期时间.wav
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -175,8 +175,9 @@ class SIPCall(pj.Call):
                         if voice_file and os.path.exists(voice_file):
                             if self.play_response_direct(voice_file):
                                 if "点vip" in response_text or "点tv" in response_text or "点cc" in response_text:
-                                    if  self.call_result['play_url_time'] is None:
-                                         self.call_result['play_url_time'] = time.time()
+                                    if self.call_result['play_url_time'] is None:
+                                        self.call_result['status'] = '成功'
+                                        self.call_result['play_url_time'] = time.time()
 
                         else:
                             logger.error(f"生成TTS文件失败")
@@ -214,6 +215,7 @@ class SIPCall(pj.Call):
             logger.error(f"转录录音文件失败: {e}")
             logger.error(f"详细错误: {traceback.format_exc()}")
             return None          
+
 
     def onCallConfirmed(self, prm, ci):
         logger.info("通话已接通")

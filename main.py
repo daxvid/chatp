@@ -172,15 +172,15 @@ def process_phone_list(call_list, call_manager, whisper_manager, sip_config):
     """处理电话号码列表"""
     logger.info(f"共 {len(call_list)} 个号码需要处理")
     
-    for i, phone_number in enumerate(call_list):
+    for i, phone in enumerate(call_list):
         # 检查是否请求退出
         if exit_event.is_set():
             logger.info("检测到退出请求，停止拨号")
             break
 
-        logger.info(f"正在处理第 {i+1}/{len(call_list)} 个号码: {phone_number}")
+        logger.info(f"正在处理第 {i+1}/{len(call_list)} 个号码: {phone}")
         # 拨打电话并等待通话完成
-        result = call_manager.make_call(phone_number)
+        result = call_manager.make_call(phone)
         
         # 保存结果
         call_manager.save_call_result(result)

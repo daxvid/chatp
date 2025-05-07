@@ -81,49 +81,44 @@ class CallManager:
         """保存呼叫结果"""
         try:
             self.call_results.append(result)
+            status = result['status']
+            play_url_time = result.get('play_url_time', None)
+            phone = result['phone']
+            start = datetime.fromtimestamp(result['start']).strftime("%Y-%m-%d %H:%M:%S")
+            end = datetime.fromtimestamp(result['end']).strftime("%Y-%m-%d %H:%M:%S")
+            duration = result.get('duration', '0')
+            record = result.get('record', '--')
+            text = result.get('text', '--')
             # 确定文件是否已存在
             file_exists = os.path.exists(self.call_log_file)
-            
             with open(self.call_log_file, 'a', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
-                
+                writer = csv.writer(f, delimiter='\t')
                 # 如果文件不存在，写入表头
                 if not file_exists:
                     writer.writerow(['电话号码', '开始时间', '结束时间', '呼叫状态', '接通时长', '录音文件', '转录结果'])
-                
-                phone = result['phone_number']
                 # 写入所有结果
-                writer.writerow([
-                    phone,
-                    datetime.fromtimestamp(result['start']).strftime("%Y%m%d_%H%M%S"),
-                    datetime.fromtimestamp(result['end']).strftime("%Y%m%d_%H%M%S"),
-                    result['status'],
-                    result.get('duration', '0'),
-                    result.get('record', '--'),
-                    result.get('text', '--')
-                ])
+                writer.writerow([phone, start, end, status, duration, record, text])
             
             # 如果通话成功接通，将结果保存到Redis并发送Telegram通知
-            if result['status'] == '接通':
+            if play_url_time or status == '接通' or status == '成功':
                 # 生成唯一的通话记录ID
                 call_id = f"call:{phone}:{int(result['start'])}"
-                play_url_time = result.get('play_url_time', None)
                 confirmed = result.get('confirmed', None)
                 try:
                     # 准备要保存的数据
                     call_data = {
                         'phone': phone,
-                        'start': datetime.fromtimestamp(result['start']).isoformat(),
-                        'end': datetime.fromtimestamp(result['end']).isoformat(),
-                        'status': result['status'],
-                        'duration': result.get('duration', '0'),
-                        'record': result.get('record', '--'),
-                        'text': result.get('text', '--'),
+                        'start': start,
+                        'end': end,
+                        'status': status,
+                        'duration': duration,
+                        'record': record,
+                        'text': text,
                     }
                     if confirmed:
-                        call_data['confirmed'] = datetime.fromtimestamp(confirmed).isoformat()
+                        call_data['confirmed'] = datetime.fromtimestamp(confirmed).strftime("%Y-%m-%d %H:%M:%S")
                     if play_url_time:
-                        call_data['play_url_time'] = datetime.fromtimestamp(play_url_time).isoformat()  
+                        call_data['play_url_time'] = datetime.fromtimestamp(play_url_time).strftime("%Y-%m-%d %H:%M:%S")
                     
                     # 保存到Redis
                     self.redis_client.set(call_id, json.dumps(call_data, ensure_ascii=False))
@@ -150,17 +145,17 @@ class CallManager:
             logger.error(f"保存呼叫结果失败: {e}")
             return False
             
-    def make_call(self, phone_number):
+    def make_call(self, phone):
         """使用TTS拨打电话"""
         try:
             # 拨打电话
-            logger.info(f"开始拨打电话: {phone_number}")
-            call = self.sip_caller.make_call(phone_number)
+            logger.info(f"开始拨打电话: {phone}")
+            call = self.sip_caller.make_call(phone)
             # 如果呼叫建立成功，等待通话完成
             if call:
                 timeout = 240
                 call_start = time.time()
-                logger.info(f"电话 {phone_number} 呼叫建立，等待通话完成...")
+                logger.info(f"电话 {phone} 呼叫建立，等待通话完成...")
                 while call.is_active():
                     # 检查退出请求
                     if self.exit_event.is_set():
@@ -184,20 +179,17 @@ class CallManager:
                 
                 # 从SIPCall获取呼叫结果
                 result = call.call_result
-                logger.info(f"电话 {phone_number} 处理完成: 状态={result['status']}, 时长={result['duration']}")
+                logger.info(f"电话 {phone} 处理完成: 状态={result['status']}, 时长={result['duration']}")
                 return result
             else:
-                logger.warning(f"电话 {phone_number} 拨打失败")
+                logger.warning(f"电话 {phone} 拨打失败")
             
             # 处理失败情况
             return {
-                'phone_number': phone_number,
+                'phone': phone,
                 'start': call_start,
                 'end': time.time(),
                 'status': '未接通',
-                'duration': '--',
-                'record': '--',
-                'text': '--'
             }
             
         except Exception as e:
@@ -205,12 +197,9 @@ class CallManager:
             logger.error(f"详细错误: {traceback.format_exc()}")
             # 记录失败结果
             return {
-                'phone_number': phone_number,
+                'phone': phone,
                 'start': call_start,
                 'end': time.time(),
                 'status': f'错误: {str(e)}',
-                'duration': '--',
-                'record': '--',
-                'text': '--'
             }
             

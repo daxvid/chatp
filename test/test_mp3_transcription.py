@@ -109,7 +109,7 @@ def transcribe_directory(input_dir, output_file=None, file_types=None):
         "failed_transcriptions": len(audio_files) - successful_count,
         "total_duration_seconds": round(total_duration, 2),
         "average_duration_seconds": round(total_duration / max(1, len(audio_files)), 2),
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S"),
         "file_types": file_types
     }
     

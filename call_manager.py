@@ -1,5 +1,6 @@
 import os
 import time
+import math
 import csv
 import json
 import redis
@@ -86,7 +87,7 @@ class CallManager:
             phone = result['phone']
             start = datetime.fromtimestamp(result['start']).strftime("%Y-%m-%d %H:%M:%S")
             end = datetime.fromtimestamp(result['end']).strftime("%Y-%m-%d %H:%M:%S")
-            duration = result.get('duration', '0')
+            duration = math.ceil(result.get('duration', 0))
             record = result.get('record', '--')
             text = result.get('text', '--')
             # 确定文件是否已存在
@@ -127,7 +128,7 @@ class CallManager:
                     logger.error(f"保存通话到Redis失败: {e}")
 
                 # 如果有播放下载地址,则发送Telegram通知
-                if play_url_time:
+                if play_url_time and duration >= 10:
                     try:
                         #将电话的第4/5/6位数字隐藏
                         phone_hide = phone[:3] + '***' + phone[6:]

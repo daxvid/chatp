@@ -236,7 +236,7 @@ class SIPCall(pj.Call):
         # 如果之前标记为接通，则计算通话时长
         if self.call_result['status'] == '接通' or self.call_result['status'] == '成功':
             duration = (self.call_result['end'] - self.call_result['confirmed'])
-            self.call_result['duration'] = f"{duration:.1f}秒"
+            self.call_result['duration'] = duration #f"{duration:.1f}秒"
         
         # 停止录音
         if self.recorder:

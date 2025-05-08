@@ -1,7 +1,6 @@
 import os
 import logging
 import time
-import datetime
 import csv
 import ssl
 import whisper
@@ -11,6 +10,7 @@ import signal
 import sys
 import pjsua2 as pj
 from threading import Event
+from datetime import datetime
 import subprocess
 import shutil
 

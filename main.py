@@ -266,7 +266,11 @@ def main():
             with open(call_log_file, 'r', encoding='utf-8') as f:
                 csv_reader = csv.reader(f, delimiter='\t')
                 next(csv_reader)  # 跳过表头
-                called_numbers = [row[0] for row in csv_reader]
+                called_numbers = []
+                for row in csv_reader:
+                    if row[5] != '488':
+                        called_numbers.append(row[0])
+                # called_numbers = [row[0] for row in csv_reader]
                 # 从call_list中删除已经拨打过的电话号码
                 call_list = [number for number in call_list if number not in called_numbers]
                 logger.info(f"已拨打过{len(called_numbers)}个号码")

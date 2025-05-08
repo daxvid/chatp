@@ -301,7 +301,7 @@ class SIPCall(pj.Call):
             logger.error(f"详细错误: {traceback.format_exc()}")
          
     def play_response_direct(self, response_text, voice_file, weak=False):
-        """直接播放响应音频到通话对方"""
+        """播放响应音频到通话对方"""
         try:
             if not os.path.exists(voice_file):
                 logger.error(f"响应语音文件不存在: {voice_file}")
@@ -363,9 +363,9 @@ class SIPCall(pj.Call):
                     logger.warning("无法获取音频媒体，播放失败")
                     return False
             except Exception as e:
-                logger.warning(f"立即播放失败，将在下一次媒体状态改变时尝试: {e}")
-                # 不返回错误，而是等待onCallMediaState处理
-                return True
+                logger.warning(f"播放语音失败: {e}")
+                logger.error(f"播放语音失败，详细错误: {traceback.format_exc()}")
+                return False
                 
         except Exception as e:
             logger.error(f"播放响应过程中出错: {e}")

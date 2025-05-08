@@ -188,7 +188,7 @@ def process_phone_list(call_list, call_manager, whisper_manager, sip_config):
         
         # 如果不是最后一个号码且未请求退出，等待一段时间
         if i < len(call_list) - 1 and not exit_event.is_set():
-            interval = sip_config.get('call_interval', 5)
+            interval = sip_config.get('call_interval', 3)
             wait_for_interval(interval, exit_event)
 
 def cleanup_resources():
@@ -268,8 +268,9 @@ def main():
                 next(csv_reader)  # 跳过表头
                 called_numbers = []
                 for row in csv_reader:
-                    if row[5] != '488':
-                        called_numbers.append(row[0])
+                    if row[5] == '488' or row[5] == '404' or row[5] == '503':
+                        continue
+                    called_numbers.append(row[0])
                 # called_numbers = [row[0] for row in csv_reader]
                 # 从call_list中删除已经拨打过的电话号码
                 call_list = [number for number in call_list if number not in called_numbers]

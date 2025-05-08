@@ -26,7 +26,7 @@ class WhisperManager:
             decode_responses=True  # 自动解码响应为字符串
         )
     
-    def transcribe(self, audio_file, timeout=300):
+    def transcribe(self, audio_file, timeout=60):
         """提交转录任务并等待结果
         
         Args:

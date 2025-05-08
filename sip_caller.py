@@ -201,7 +201,7 @@ class SIPCall(pj.Call):
             ffmpeg_command = f"ffmpeg -i {audio_file} -af silenceremove=stop_periods=-1:stop_duration=0.5:stop_threshold=-50dB {temp_file}"
             subprocess.run(ffmpeg_command, shell=True, check=True)
 
-            result = self.whisper_manager.transcribe(temp_file)
+            result = self.whisper_manager.transcribe(temp_file, 60)
             if result:
                 return result.get("text", "").strip()
             else:
@@ -434,7 +434,7 @@ class SIPCall(pj.Call):
                 logger.info(f"保存录音文件: {chunk_file}")
                 self.chunks_size += 1
                 self.file_list.append(chunk_file)
-                result = self.whisper_manager.transcribe(chunk_file)
+                result = self.whisper_manager.transcribe(chunk_file, 5)
                 self.process_result(result)
                 count+=1
         finally:

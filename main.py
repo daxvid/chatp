@@ -173,11 +173,22 @@ def process_phone_list(call_list, call_manager, whisper_manager, sip_config):
     """处理电话号码列表"""
     logger.info(f"共 {len(call_list)} 个号码需要处理")
     
+    working_hours = sip_config.get('working_hours', {
+        'enabled': True,
+        'start': '12:00',
+        'end': '21:00',
+        'days': [0, 1, 2, 3, 4, 5]  # 0-6 代表周一到周日
+    })
+    
     for i, phone in enumerate(call_list):
         # 检查是否请求退出
         if exit_event.is_set():
             logger.info("检测到退出请求，停止拨号")
             break
+
+        while not is_working_hours(working_hours):
+            # 当前不是工作时段，等待拨打
+            time.sleep(60)
 
         logger.info(f"正在处理第 {i+1}/{len(call_list)} 个号码: {phone}")
         # 拨打电话并等待通话完成
@@ -190,6 +201,45 @@ def process_phone_list(call_list, call_manager, whisper_manager, sip_config):
         if i < len(call_list) - 1 and not exit_event.is_set():
             interval = sip_config.get('call_interval', 3)
             wait_for_interval(interval, exit_event)
+        
+    def is_working_hours(working_hours):
+        """检查当前是否在工作时段内"""
+        try:
+            if not working_hours.get('enabled', False):
+                return True
+                
+            now = datetime.now()
+            current_day = now.weekday()  # 0-6 代表周一到周日
+            
+            # 检查是否在工作日
+            if current_day not in working_hours.get('days', [0, 1, 2, 3, 4, 5]):
+                print(f"当前是周{current_day + 1}，非工作日")
+                return False
+                
+            # 将时间字符串转换为datetime对象进行比较
+            start_time_str = working_hours.get('start', '12:00')
+            end_time_str = working_hours.get('end', '21:00')
+            
+            # 创建今天的开始和结束时间
+            start_time = datetime.strptime(start_time_str, '%H:%M').replace(
+                year=now.year, month=now.month, day=now.day)
+            end_time = datetime.strptime(end_time_str, '%H:%M').replace(
+                year=now.year, month=now.month, day=now.day)
+            
+            # 如果结束时间小于开始时间，说明跨天，需要调整结束时间
+            if end_time < start_time:
+                end_time = end_time.replace(day=now.day + 1)
+            
+            if start_time <= now <= end_time:
+                return True
+            else:
+                print(f"当前时间 {now.strftime('%H:%M')} 不在工作时段 {start_time_str}-{end_time_str} 内")
+                return False
+                
+        except Exception as e:
+            print(f"检查工作时段时出错: {e}")
+            return False
+
 
 def cleanup_resources():
     """清理系统资源"""

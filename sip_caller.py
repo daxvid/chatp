@@ -468,8 +468,8 @@ class SIPCall(pj.Call):
     def time_out(self):
         """通话超时"""
         start = self.call_result['confirmed']
-        if start == False:
-            start = self.start_time
+        if  start is None:
+            start = self.call_time
         if time.time() - start > 116:
             logger.info("通话时长超过116秒,挂断")
             self.hangup()

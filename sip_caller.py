@@ -312,6 +312,10 @@ class SIPCall(pj.Call):
                 while self.player and time.time() - start_time < 20:
                     time.sleep(0.1)
 
+            # 检查通话状态
+            if self.done:
+                return False
+
             # 停止当前播放
             if self.player:
                 self.player.stopTransmit(self.audio_media)

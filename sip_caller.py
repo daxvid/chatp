@@ -67,6 +67,8 @@ class SIPCall(pj.Call):
         self.talk_list = list()  # 已转录的文本内容
         self.call_time = time.time()    # 开始呼叫的时间
         self.done = False        # 是否已结束
+        self.is_play_url = False # 是否播放下载地址
+        self.play_url_times = 0 # 播放下载地址的次数
         # 通话结果数据
         self.call_result = {
             'phone': phone,
@@ -155,7 +157,7 @@ class SIPCall(pj.Call):
             return False
     
 
-    def response_callback(self, text):
+    def response_callback(self, text, weak=False):
         """处理转录结果的回调函数"""
         if text:
             logger.info(f"收到转录结果: {text}")
@@ -173,12 +175,7 @@ class SIPCall(pj.Call):
                         # 生成TTS文件
                         voice_file = self.tts_manager.generate_tts_sync(response_text)
                         if voice_file and os.path.exists(voice_file):
-                            if self.play_response_direct(voice_file):
-                                if "点vip" in response_text or "点tv" in response_text or "点cc" in response_text:
-                                    if self.call_result['play_url_time'] is None:
-                                        self.call_result['status'] = '成功'
-                                        self.call_result['play_url_time'] = time.time()
-
+                            self.play_response_direct(response_text, voice_file, weak)
                         else:
                             logger.error(f"生成TTS文件失败")
                     else:
@@ -228,7 +225,7 @@ class SIPCall(pj.Call):
             self.start_recording()
             # 等待1秒,开始播放第一条语音
             time.sleep(1)
-            self.response_callback("播-放-开-场-欢-迎-语")
+            self.response_callback("播-放-开-场-欢-迎-语", False)
 
 
     def onCallDisconnected(self, prm, ci):
@@ -299,42 +296,60 @@ class SIPCall(pj.Call):
             logger.error(f"处理呼叫状态变化时出错: {e}")
             logger.error(f"详细错误: {traceback.format_exc()}")
          
-    def play_response_direct(self, voice_file=None):
+    def play_response_direct(self, response_text, voice_file, weak=False):
         """直接播放响应音频到通话对方"""
         try:
             if not os.path.exists(voice_file):
                 logger.error(f"响应语音文件不存在: {voice_file}")
                 return False
 
+            if weak and self.player:
+                return False
+
+            # 如果正在播放下载地址，则等待播放完成或者等待超时
+            if self.is_play_url and self.player:
+                start_time = time.time()
+                while self.player and time.time() - start_time < 20:
+                    time.sleep(0.1)
+
             # 停止当前播放
             if self.player:
                 self.player.stopTransmit(self.audio_media)
                 self.play_over_time = time.time()
                 self.player = None
-            
+
             # 尝试立即播放，如果可能的话
             try:
                 # 获取通话媒体
                 audio_media = self.audio_media
                 if audio_media:
+                    is_play_url = "点vip" in response_text or "点tv" in response_text or "点cc" in response_text
                     # 创建自定义音频播放器
                     player = CustomAudioMediaPlayer()
                     # 使用PJMEDIA_FILE_NO_LOOP标志创建播放器
                     player.createPlayer(voice_file, pj.PJMEDIA_FILE_NO_LOOP)
-                    
+            
                     # 注册播放完成回调
                     def on_playback_complete():
-                        logger.info(f"结束播放语音: {voice_file}")
                         player.stopTransmit(audio_media)
                         if self.player == player:
+                            logger.info(f"结束播放语音: {response_text}")
                             self.play_over_time = time.time()
                             self.player = None
+                            if is_play_url:
+                                self.play_url_times += 1
 
                     player.setEofCallback(on_playback_complete)
                     # 播放到通话媒体
                     player.startTransmit(audio_media)
+                    self.is_play_url = is_play_url
                     self.player = player
-                    logger.info(f"开始播放语音: {voice_file}")
+                    logger.info(f"开始播放语音: {response_text}")
+
+                    if is_play_url and self.call_result['play_url_time'] is None:
+                        self.call_result['status'] = '成功'
+                        self.call_result['play_url_time'] = time.time()
+
                     return True
                 else:
                     logger.warning("无法获取音频媒体，播放失败")
@@ -421,11 +436,14 @@ class SIPCall(pj.Call):
         finally:
             os.remove(temp_file)
 
-        if count == 0 and talking == False and self.player == None and self.play_over_time > 0:
+        if self.play_url_times < 4 and count == 0 and talking == False and self.player == None and self.play_over_time > 0:
             now = time.time()
             if  now - self.play_over_time > 3 and now - self.last_process_time > 3:
                 logger.info("双方都没有说话超过3秒,播放下载地址")
-                self.response_callback("播-放-下-载-地-址")
+                if self.play_url_times == 0:
+                    self.response_callback("播-放-下-载-地-址", False)
+                else:
+                    self.response_callback("播-放-下-载-地-址", True)
 
         return count
     
@@ -438,15 +456,26 @@ class SIPCall(pj.Call):
                 talk = result.get("text", "").strip()
                 # 如果成功识别到文本，调用回调
                 if talk and talk != '':
-                    self.response_callback(talk)
+                    self.response_callback(talk, False)
                 else:
-                    self.response_callback("播-放-下-载-地-址")
+                    self.response_callback("播-放-下-载-地-址", True)
         except Exception as e:
             logger.error(f"获取异步转录结果失败: {e}")
         finally:
             self.talk_list.append(talk)
             logger.info(f"获取到音频段 {len(self.talk_list)} 的转录结果: {talk[:30]}...")
 
+    def time_out(self):
+        """通话超时"""
+        start = self.call_result['confirmed']
+        if start == False:
+            start = self.start_time
+        if time.time() - start > 116:
+            logger.info("通话时长超过116秒,挂断")
+            self.hangup()
+            return True
+        return False
+                       
 class SIPCaller:
     """SIP呼叫管理类"""
     def __init__(self, sip_config, tts_manager=None, whisper_manager=None, response_manager=None):

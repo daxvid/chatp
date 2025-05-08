@@ -150,11 +150,10 @@ class CallManager:
         try:
             # 拨打电话
             logger.info(f"开始拨打电话: {phone}")
+            call_start = time.time()
             call = self.sip_caller.make_call(phone)
             # 如果呼叫建立成功，等待通话完成
             if call:
-                timeout = 240
-                call_start = time.time()
                 logger.info(f"电话 {phone} 呼叫建立，等待通话完成...")
                 while call.is_active():
                     # 检查退出请求
@@ -163,10 +162,7 @@ class CallManager:
                         call.hangup()
                         break
                     
-                    # 检查通话时间是否超时
-                    if time.time() - call_start > timeout:
-                        logger.warning(f"通话时间超过{timeout}秒，强制结束")
-                        call.hangup()
+                    if call.time_out():
                         break
 
                     count = call.voice_check()

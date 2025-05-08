@@ -220,14 +220,15 @@ def process_phone_list(call_list, call_manager, whisper_manager, sip_config):
     })
     
     for i, phone in enumerate(call_list):
+        
+        while not is_working_hours(working_hours) and not exit_event.is_set():
+            # 当前不是工作时段，等待拨打
+            time.sleep(60)
+
         # 检查是否请求退出
         if exit_event.is_set():
             logger.info("检测到退出请求，停止拨号")
             break
-
-        while not is_working_hours(working_hours):
-            # 当前不是工作时段，等待拨打
-            time.sleep(60)
 
         logger.info(f"正在处理第 {i+1}/{len(call_list)} 个号码: {phone}")
         # 拨打电话并等待通话完成

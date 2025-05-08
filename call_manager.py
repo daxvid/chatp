@@ -88,6 +88,8 @@ class CallManager:
             start = datetime.fromtimestamp(result['start']).strftime("%Y-%m-%d %H:%M:%S")
             end = datetime.fromtimestamp(result['end']).strftime("%Y-%m-%d %H:%M:%S")
             duration = math.ceil(result.get('duration', 0))
+            code = result.get('code', 0)
+            reason = result.get('reason', '')
             record = result.get('record', '--')
             text = result.get('text', '--')
             # 确定文件是否已存在
@@ -96,9 +98,9 @@ class CallManager:
                 writer = csv.writer(f, delimiter='\t')
                 # 如果文件不存在，写入表头
                 if not file_exists:
-                    writer.writerow(['电话号码', '开始时间', '结束时间', '呼叫状态', '接通时长', '录音文件', '转录结果'])
+                    writer.writerow(['电话号码', '开始时间', '结束时间', '呼叫状态', '接通时长', '状态码', '原因', '录音文件', '转录结果'])
                 # 写入所有结果
-                writer.writerow([phone, start, end, status, duration, record, text])
+                writer.writerow([phone, start, end, status, duration, code, reason, record, text])
             
             # 如果通话成功接通，将结果保存到Redis并发送Telegram通知
             if play_url_time or status == '接通' or status == '成功':
@@ -113,6 +115,8 @@ class CallManager:
                         'end': end,
                         'status': status,
                         'duration': duration,
+                        'code': code,
+                        'reason': reason,
                         'record': record,
                         'text': text,
                     }

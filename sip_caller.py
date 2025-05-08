@@ -76,10 +76,12 @@ class SIPCall(pj.Call):
             'end': self.call_time,   # 结束通话时间
             'status': '未接通',
             'duration': 0,
+            'code': 0,              # 状态码
+            'reason': '',          # 原因
             'record': '--',
             'text': '--',
             'confirmed': None,       # 开始通话时间
-            'play_url_time': None # 播放下载地址的时间
+            'play_url_time': None, # 播放下载地址的时间
         }
     
 
@@ -232,6 +234,8 @@ class SIPCall(pj.Call):
         logger.info("通话已结束")
         # 记录通话结束时间
         self.call_result['end'] = time.time()
+        self.call_result['code'] = ci.lastStatusCode
+        self.call_result['reason'] = ci.lastReason
     
         # 如果之前标记为接通，则计算通话时长
         if self.call_result['status'] == '接通' or self.call_result['status'] == '成功':

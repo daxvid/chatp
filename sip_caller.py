@@ -224,7 +224,7 @@ class SIPCall(pj.Call):
         # 停止录音
         if self.recorder:
             self.stop_recording()
-            self.call_result['talks'] = talk_list
+            self.call_result['talks'] = self.talk_list
             # 转录通话录音并更新结果
             self.transcribe_audio()
         self.done = True

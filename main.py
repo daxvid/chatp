@@ -235,20 +235,18 @@ def is_working_hours(working_hours):
         print(f"检查工作时段时出错: {e}")
         return False
 
-def process_phone_list(call_list, call_manager, whisper_manager, sip_config):
-    global config
+def process_phone_list(call_list, call_manager, whisper_manager, config):
     """处理电话号码列表"""
     logger.info(f"共 {len(call_list)} 个号码需要处理")
-    
+    sip_config = config.get_sip_config()
+    whitelist_ips = config.get_whitelist_ips()
+    interval = sip_config.get('call_interval', 2)
     working_hours = sip_config.get('working_hours', {
         'enabled': True,
         'start': '12:00',
         'end': '22:00',
         'days': [0, 1, 2, 3, 4, 5]  # 0-6 代表周一到周日
     })
-    
-    interval = sip_config.get('call_interval', 2)
-    whitelist_ips = config.get_whitelist_ips()
 
     i = 0
     max_val = len(call_list)
@@ -353,7 +351,7 @@ def main():
                 logger.info(f"已拨打过{len(called_numbers)}个号码")
             
         # 处理电话列表
-        process_phone_list(call_list, call_manager, whisper_manager, config.get_sip_config())
+        process_phone_list(call_list, call_manager, whisper_manager, config)
             
         logger.info("所有呼叫处理完成")
         return 0

@@ -83,7 +83,6 @@ class CallManager:
         try:
             self.call_results.append(result)
             status = result['status']
-            play_url_time = result.get('play_url_time', None)
             phone = result['phone']
             start = datetime.fromtimestamp(result['start']).strftime("%Y-%m-%d %H:%M:%S")
             end = datetime.fromtimestamp(result['end']).strftime("%Y-%m-%d %H:%M:%S")
@@ -95,6 +94,12 @@ class CallManager:
             text = ''
             if talks:
                 text = "; ".join([f"{i+1}. {talk.get('text', '').strip()}" for i, talk in enumerate(talks)])
+
+            play_url_times = result.get('play_url_times', 0)
+            show_status = status
+            if  play_url_times > 0 or duration >= 16:
+                show_status = '成功'
+
             # 确定文件是否已存在
             file_exists = os.path.exists(self.call_log_file)
             with open(self.call_log_file, 'a', newline='', encoding='utf-8') as f:
@@ -103,10 +108,10 @@ class CallManager:
                 if not file_exists:
                     writer.writerow(['电话号码', '开始时间', '结束时间', '呼叫状态', '接通时长', '状态码', '原因', '录音文件', '转录结果'])
                 # 写入所有结果
-                writer.writerow([phone, start, end, status, duration, code, reason, record, text])
+                writer.writerow([phone, start, end, show_status, duration, code, reason, record, text])
             
             # 如果通话成功接通，将结果保存到Redis并发送Telegram通知
-            if play_url_time or status == '接通' or status == '成功':
+            if  status == '接通':
                 # 生成唯一的通话记录ID
                 call_id = f"call:{phone}:{int(result['start'])}"
                 confirmed = result.get('confirmed', None)
@@ -116,17 +121,16 @@ class CallManager:
                         'phone': phone,
                         'start': start,
                         'end': end,
-                        'status': status,
+                        'status': show_status,
                         'duration': duration,
                         'code': code,
                         'reason': reason,
                         'record': record,
                         'text': text,
+                        'times': play_url_times,
                     }
                     if confirmed:
                         call_data['confirmed'] = datetime.fromtimestamp(confirmed).strftime("%Y-%m-%d %H:%M:%S")
-                    if play_url_time:
-                        call_data['play_url_time'] = datetime.fromtimestamp(play_url_time).strftime("%Y-%m-%d %H:%M:%S")
                     
                     # 保存到Redis
                     self.redis_client.set(call_id, json.dumps(call_data, ensure_ascii=False))
@@ -135,7 +139,7 @@ class CallManager:
                     logger.error(f"保存通话到Redis失败: {e}")
 
                 # 如果有播放下载地址,则发送Telegram通知
-                if play_url_time and duration >= 10:
+                if play_url_times>0 or duration >= 16:
                     try:
                         #将电话的第4/5/6位数字隐藏
                         phone_hide = phone[:3] + '***' + phone[6:]

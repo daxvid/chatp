@@ -65,8 +65,7 @@ class SIPCall(pj.Call):
         self.chunks_size = 0     # 已保存的音频段数量
         self.talk_list = list()  # 已转录的文本内容
         self.call_time = time.time()    # 开始呼叫的时间
-        self.done = False        # 是否已结束
-        self.is_play_url = False # 是否播放下载地址
+        self.done = False        # 是否已结
         self.play_url_times = 0 # 播放下载地址的次数
         self.is_bot = False    # 对方是否是机器人
 
@@ -81,7 +80,7 @@ class SIPCall(pj.Call):
             'reason': '',          # 原因
             'record': '--',
             'confirmed': None,       # 开始通话时间
-            'play_url_time': None, # 播放下载地址的时间
+            'play_url_times': 0, # 播放下载地址的次数
             'talks': None,
         }
     
@@ -160,22 +159,18 @@ class SIPCall(pj.Call):
             return False
     
 
-    def response_callback(self, text, weak=False):
+    def response_callback(self, text, can_pass=False):
         """处理转录结果的回调函数"""
         if text:
             logger.info(f"收到转录结果: {text}")
             # 使用ResponseManager获取回复
             response_text = self.response_manager.get_response(text)
-            if not response_text:
-                logger.info(f"没有匹配到回复规则,播放下载地址")
-                response_text = self.response_manager.get_response("播-放-下-载-地-址")
-
             if response_text:
                 logger.info(f"匹配到回复: {response_text}")
                 # 生成TTS文件
                 voice_file = self.tts_manager.generate_tts_sync(response_text)
                 if voice_file and os.path.exists(voice_file):
-                    self.play_response_direct(response_text, voice_file, weak)
+                    self.play_response_direct(response_text, voice_file, can_pass)
 
     def transcribe_audio(self):
         try:
@@ -222,7 +217,7 @@ class SIPCall(pj.Call):
         self.call_result['reason'] = ci.lastReason
     
         # 如果之前标记为接通，则计算通话时长
-        if self.call_result['status'] == '接通' or self.call_result['status'] == '成功':
+        if self.call_result['status'] == '接通':
             duration = (self.call_result['end'] - self.call_result['confirmed'])
             self.call_result['duration'] = duration #f"{duration:.1f}秒"
         
@@ -279,21 +274,24 @@ class SIPCall(pj.Call):
             logger.error(f"处理呼叫状态变化时出错: {e}")
             logger.error(f"详细错误: {traceback.format_exc()}")
          
-    def play_response_direct(self, response_text, voice_file, weak=False, leave=False):
+    def play_response_direct(self, response_text, voice_file, can_pass=False, leave=False):
         """播放响应音频到通话对方"""
         try:
             if not os.path.exists(voice_file):
                 logger.error(f"响应语音文件不存在: {voice_file}")
                 return False
 
-            if weak and self.player:
+            if can_pass and self.player:
                 return False
 
             # 如果正在播放下载地址，则等待播放完成或者等待超时
-            if self.is_play_url and self.player and leave == False:
+            if self.player and leave == False:
                 start_time = time.time()
                 while self.player and time.time() - start_time < 20:
                     time.sleep(0.1)
+                    # 检查通话状态
+                    if self.done:
+                        return False
 
             # 检查通话状态
             if self.done:
@@ -323,22 +321,19 @@ class SIPCall(pj.Call):
                             logger.info(f"结束播放语音: {response_text}")
                             self.play_over_time = time.time()
                             self.player = None
-                            if is_play_url:
+                            if is_play_url and self.done == False:
                                 self.play_url_times += 1
+                                self.call_result['play_url_times'] = self.play_url_times
+                                if self.play_url_times >= 5:
+                                    self.hangup()
                             if leave:
                                 self.hangup()
 
                     player.setEofCallback(on_playback_complete)
                     # 播放到通话媒体
                     player.startTransmit(audio_media)
-                    self.is_play_url = is_play_url
                     self.player = player
                     logger.info(f"开始播放语音: {response_text}")
-
-                    if is_play_url and self.call_result['play_url_time'] is None:
-                        self.call_result['status'] = '成功'
-                        self.call_result['play_url_time'] = time.time()
-
                     return True
                 else:
                     logger.warning("无法获取音频媒体，播放失败")
@@ -424,7 +419,7 @@ class SIPCall(pj.Call):
         finally:
             os.remove(temp_file)
 
-        if self.play_url_times < 4 and count == 0 and talking == False and self.player == None and self.play_over_time > 0:
+        if self.play_url_times < 5 and count == 0 and self.player == None and self.play_over_time > 0:
             now = time.time()
             if  now - self.play_over_time > 2 and now - self.last_process_time > 2:
                 logger.info("双方都没有说话超过2秒,播放下载地址")
@@ -445,7 +440,7 @@ class SIPCall(pj.Call):
                     response_text = self.response_manager.get_response("播-放-下-载-地-址")
                     voice_file = self.tts_manager.generate_tts_sync(response_text)
                     if voice_file and os.path.exists(voice_file):
-                        self.play_response_direct(response_text, voice_file, weak, True)
+                        self.play_response_direct(response_text, voice_file, False, True)
                     return True
         return False
     
@@ -460,8 +455,9 @@ class SIPCall(pj.Call):
                 if talk and talk != '':
                     if not self.check_bot(talk):
                         self.response_callback(talk, False)
-                else:
-                    self.response_callback("播-放-下-载-地-址", True)
+                else
+                 self.response_callback("播-放-下-载-地-址", True)
+                        
         except Exception as e:
             logger.error(f"获取异步转录结果失败: {e}")
         finally:
@@ -473,9 +469,11 @@ class SIPCall(pj.Call):
         start = self.call_result['confirmed']
         if  start is None:
             start = self.call_time
+
         over_time = 116
-        if self.is_bot:
+        if self.is_bot or self.player is None:
             over_time = 56
+            
         if time.time() - start > over_time:
             logger.info(f"通话时长超过{over_time}秒,挂断")
             self.hangup()

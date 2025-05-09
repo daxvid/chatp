@@ -97,7 +97,7 @@ class CallManager:
 
             play_url_times = result.get('play_url_times', 0)
             show_status = status
-            if  play_url_times > 0 or duration >= 16:
+            if  duration >= 16:
                 show_status = '成功'
 
             # 确定文件是否已存在
@@ -139,7 +139,7 @@ class CallManager:
                     logger.error(f"保存通话到Redis失败: {e}")
 
                 # 如果有播放下载地址,则发送Telegram通知
-                if play_url_times>0 or duration >= 16:
+                if duration >= 16:
                     try:
                         #将电话的第4/5/6位数字隐藏
                         phone_hide = phone[:3] + '***' + phone[6:]

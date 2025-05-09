@@ -299,7 +299,10 @@ class SIPCall(pj.Call):
 
             # 停止当前播放
             if self.player:
-                self.player.stopTransmit(self.audio_media)
+                try:
+                    self.player.stopTransmit(self.audio_media)
+                except Exception as e:
+                    logger.warning(f"停止播放失败1: {e}")
                 self.play_over_time = time.time()
                 self.player = None
 
@@ -316,7 +319,10 @@ class SIPCall(pj.Call):
             
                     # 注册播放完成回调
                     def on_playback_complete():
-                        player.stopTransmit(audio_media)
+                        try:    
+                            player.stopTransmit(audio_media)
+                        except Exception as e:
+                            logger.warning(f"停止播放失败2: {e}")
                         if self.player == player:
                             logger.info(f"结束播放语音: {response_text}")
                             self.play_over_time = time.time()

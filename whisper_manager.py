@@ -42,8 +42,8 @@ class WhisperManager:
                 logger.error(f"音频文件不存在: {audio_file}")
                 return None
                 
-            # 生成任务ID
-            task_id = str(uuid.uuid4())
+            # 使用文件名生成任务ID
+            task_id = os.path.splitext(os.path.basename(audio_file))[0]
             
             # 创建任务数据
             task_data = {
@@ -59,11 +59,9 @@ class WhisperManager:
             start_time = time.time()
             while time.time() - start_time < timeout:
                 # 检查结果是否已就绪
-                result_data = self.redis_client.get(f"whisper_result:{task_id}")
+                result_data = self.redis_client.get(f"tran:{task_id}")
                 if result_data:
                     result = json.loads(result_data)
-                    # 清理结果数据
-                    self.redis_client.delete(f"whisper_result:{task_id}")
                     return result
                 time.sleep(0.1)  # 短暂等待后重试
             

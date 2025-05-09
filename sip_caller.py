@@ -63,12 +63,12 @@ class SIPCall(pj.Call):
         self.play_over_time = 0  # 播放完成时间
         self.last_process_time = 0  # 最后一段音频的时间
         self.chunks_size = 0     # 已保存的音频段数量
-        self.file_list = list()  # 已分段的对话文件列表
         self.talk_list = list()  # 已转录的文本内容
         self.call_time = time.time()    # 开始呼叫的时间
         self.done = False        # 是否已结束
         self.is_play_url = False # 是否播放下载地址
         self.play_url_times = 0 # 播放下载地址的次数
+
         # 通话结果数据
         self.call_result = {
             'phone': phone,
@@ -437,7 +437,6 @@ class SIPCall(pj.Call):
                 chunk.export(chunk_file, format="wav")  
                 logger.info(f"保存录音文件: {chunk_file}")
                 self.chunks_size += 1
-                self.file_list.append(chunk_file)
                 result = self.whisper_manager.transcribe(chunk_file, 5)
                 self.process_result(result)
                 count+=1

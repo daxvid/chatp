@@ -138,11 +138,11 @@ class WhisperTranscriptionWorker:
             
             # 执行转录
             result = self.transcribe_audio(audio_file, task_id)
-            
             # 将结果写入Redis
             if result:
-                self.redis_client.set(
-                    f"whisper_result:{task_id}",
+                self.redis_client.setex(
+                    f"tran:{task_id}",
+                    2592000,  # 30 days timeout
                     json.dumps({
                         "success": True,
                         "text": result["text"],
@@ -150,8 +150,9 @@ class WhisperTranscriptionWorker:
                     })
                 )
             else:
-                self.redis_client.set(
-                    f"whisper_result:{task_id}",
+                self.redis_client.setex (
+                    f"tran:{task_id}",
+                    2592000,  # 30 days timeout
                     json.dumps({
                         "success": False,
                         "error": "Transcription failed"
@@ -163,8 +164,9 @@ class WhisperTranscriptionWorker:
         except Exception as e:
             logger.error(f"处理文件 {audio_file} 时发生错误: {e}")
             # 确保错误结果也被写入Redis
-            self.redis_client.set(
-                f"whisper_result:{task_id}",
+            self.redis_client.setex(
+                f"tran:{task_id}",  
+                2592000,  # 30 days timeout
                 json.dumps({
                     "success": False,
                     "error": str(e)

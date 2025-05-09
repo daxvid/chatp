@@ -13,6 +13,9 @@ from threading import Event
 from datetime import datetime
 import subprocess
 import shutil
+import socket
+import requests
+import re
 
 from config_manager import ConfigManager
 from response_manager import ResponseManager
@@ -23,6 +26,39 @@ from call_manager import CallManager
 
 # 禁用全局SSL证书验证
 ssl._create_default_https_context = ssl._create_unverified_context
+
+def get_my_ip():
+    """获取本机公网IP地址"""
+    ip_apis = [
+        "https://api.ipify.org",
+        "https://ifconfig.me/ip",
+        "https://icanhazip.com",
+        "https://ident.me",
+        "https://ip.anysrc.net/plain",
+        "https://myexternalip.com/raw"
+    ]
+    for api_url in ip_apis:
+        try:
+            response = requests.get(api_url, timeout=5)
+            if response.status_code == 200:
+                ip = response.text.strip()
+                if ip and re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', ip):
+                    return ip
+        except Exception as e:
+            continue
+
+    # 如果所有方法都失败，尝试使用系统命令
+    try:
+        # 尝试使用 curl 命令
+        ip = subprocess.check_output(['curl', '-s', 'https://api.ipify.org']).decode('utf-8').strip()
+        if ip and re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', ip):
+            return ip
+    except Exception as e:
+        print(f"使用curl命令获取IP失败: {e}")
+
+    # 如果所有方法都失败，返回本地回环地址
+    print("所有获取IP的方法都失败，使用本地回环地址")
+    return "127.0.0.1"
 
 # 配置日志
 def setup_logging(log_file):
@@ -161,14 +197,6 @@ def prepare_call_list(call_manager, call_list_file):
         logger.error(f"详细错误: {traceback.format_exc()}")
         return None
 
-def wait_for_interval(interval, exit_event):
-    """等待指定的时间间隔，支持中断"""
-    logger.info(f"等待 {interval} 秒后拨打下一个电话...")
-    for _ in range(interval):
-        if exit_event.is_set():
-            break
-        time.sleep(1)
-
 def is_working_hours(working_hours):
     """检查当前是否在工作时段内"""
     try:
@@ -207,40 +235,48 @@ def is_working_hours(working_hours):
         print(f"检查工作时段时出错: {e}")
         return False
 
-
 def process_phone_list(call_list, call_manager, whisper_manager, sip_config):
+    global config
     """处理电话号码列表"""
     logger.info(f"共 {len(call_list)} 个号码需要处理")
     
     working_hours = sip_config.get('working_hours', {
         'enabled': True,
         'start': '12:00',
-        'end': '21:00',
+        'end': '22:00',
         'days': [0, 1, 2, 3, 4, 5]  # 0-6 代表周一到周日
     })
     
-    for i, phone in enumerate(call_list):
-        
-        while not is_working_hours(working_hours) and not exit_event.is_set():
-            # 当前不是工作时段，等待拨打
-            time.sleep(60)
+    interval = sip_config.get('call_interval', 2)
+    whitelist_ips = config.get_whitelist_ips()
 
+    i = 0
+    max_val = len(call_list)
+    while i < max_val:
         # 检查是否请求退出
         if exit_event.is_set():
             logger.info("检测到退出请求，停止拨号")
             break
 
-        logger.info(f"正在处理第 {i+1}/{len(call_list)} 个号码: {phone}")
+        if not is_working_hours(working_hours):
+            # 当前不是工作时段，等待拨打
+            time.sleep(60)
+            continue
+
+        # 检查IP是否在白名单中
+        current_ip = get_my_ip()
+        if current_ip not in whitelist_ips:
+             logger.warning(f"当前IP {current_ip} 不在白名单中，等待拨打")
+             time.sleep(60)
+             continue
+
+        phone = call_list[i]
+        i+=1
+        logger.info(f"正在处理第 {i}/{len(call_list)} 个号码: {phone}")
         # 拨打电话并等待通话完成
         result = call_manager.make_call(phone)
-        
-        # 保存结果
         call_manager.save_call_result(result)
-        
-        # 如果不是最后一个号码且未请求退出，等待一段时间
-        if i < len(call_list) - 1 and not exit_event.is_set():
-            interval = sip_config.get('call_interval', 3)
-            wait_for_interval(interval, exit_event)
+        time.sleep(interval)
 
 
 def cleanup_resources():
@@ -272,21 +308,10 @@ def main():
         if not config:
             logger.error("无法加载配置，程序退出")
             return 1
-        
-        # 获取当前外网IP
-        try:
-            # 使用 -s 参数让curl静默运行，不显示进度信息
-            response = subprocess.check_output(['curl', '-s', 'ifconfig.me'], stderr=subprocess.STDOUT)
-            current_ip = response.decode().strip()
-            logger.info(f"当前外网IP: {current_ip}")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"获取外网IP失败: {e.output.decode()}")
-            return 1
 
         # 清理IP地址中的不可见字符
-        current_ip = current_ip.strip()
+        current_ip = get_my_ip()
         whitelist_ips = config.get_whitelist_ips()
-
         if current_ip not in whitelist_ips:
             print(f"当前IP {current_ip} 不在白名单中, 程序退出")
             return 1
@@ -320,10 +345,9 @@ def main():
                 next(csv_reader)  # 跳过表头
                 called_numbers = []
                 for row in csv_reader:
-                    if row[5] == '488' or row[5] == '404' or row[5] == '503':
+                    if str(row[5]) in ['488', '404', '503']:
                         continue
                     called_numbers.append(row[0])
-                # called_numbers = [row[0] for row in csv_reader]
                 # 从call_list中删除已经拨打过的电话号码
                 call_list = [number for number in call_list if number not in called_numbers]
                 logger.info(f"已拨打过{len(called_numbers)}个号码")

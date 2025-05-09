@@ -68,6 +68,7 @@ class SIPCall(pj.Call):
         self.done = False        # 是否已结束
         self.is_play_url = False # 是否播放下载地址
         self.play_url_times = 0 # 播放下载地址的次数
+        self.is_bot = False    # 对方是否是机器人
 
         # 通话结果数据
         self.call_result = {
@@ -164,26 +165,17 @@ class SIPCall(pj.Call):
         if text:
             logger.info(f"收到转录结果: {text}")
             # 使用ResponseManager获取回复
-            if self.response_manager:
-                response_text = self.response_manager.get_response(text)
-                if not response_text:
-                    logger.info(f"没有匹配到回复规则,播放下载地址")
-                    response_text = self.response_manager.get_response("播-放-下-载-地-址")
+            response_text = self.response_manager.get_response(text)
+            if not response_text:
+                logger.info(f"没有匹配到回复规则,播放下载地址")
+                response_text = self.response_manager.get_response("播-放-下-载-地-址")
 
-                if response_text:
-                    logger.info(f"匹配到回复: {response_text}")
-                    # 使用TTS生成语音
-                    if self.tts_manager:
-                        # 生成TTS文件
-                        voice_file = self.tts_manager.generate_tts_sync(response_text)
-                        if voice_file and os.path.exists(voice_file):
-                            self.play_response_direct(response_text, voice_file, weak)
-                        else:
-                            logger.error(f"生成TTS文件失败")
-                    else:
-                        logger.error(f"TTS管理器未初始化")
-            else:
-                logger.info(f"ResponseManager未初始化")
+            if response_text:
+                logger.info(f"匹配到回复: {response_text}")
+                # 生成TTS文件
+                voice_file = self.tts_manager.generate_tts_sync(response_text)
+                if voice_file and os.path.exists(voice_file):
+                    self.play_response_direct(response_text, voice_file, weak)
 
     def transcribe_audio(self):
         try:
@@ -287,7 +279,7 @@ class SIPCall(pj.Call):
             logger.error(f"处理呼叫状态变化时出错: {e}")
             logger.error(f"详细错误: {traceback.format_exc()}")
          
-    def play_response_direct(self, response_text, voice_file, weak=False):
+    def play_response_direct(self, response_text, voice_file, weak=False, leave=False):
         """播放响应音频到通话对方"""
         try:
             if not os.path.exists(voice_file):
@@ -298,7 +290,7 @@ class SIPCall(pj.Call):
                 return False
 
             # 如果正在播放下载地址，则等待播放完成或者等待超时
-            if self.is_play_url and self.player:
+            if self.is_play_url and self.player and leave == False:
                 start_time = time.time()
                 while self.player and time.time() - start_time < 20:
                     time.sleep(0.1)
@@ -333,6 +325,8 @@ class SIPCall(pj.Call):
                             self.player = None
                             if is_play_url:
                                 self.play_url_times += 1
+                            if leave:
+                                self.hangup()
 
                     player.setEofCallback(on_playback_complete)
                     # 播放到通话媒体
@@ -432,14 +426,28 @@ class SIPCall(pj.Call):
 
         if self.play_url_times < 4 and count == 0 and talking == False and self.player == None and self.play_over_time > 0:
             now = time.time()
-            if  now - self.play_over_time > 3 and now - self.last_process_time > 3:
-                logger.info("双方都没有说话超过3秒,播放下载地址")
+            if  now - self.play_over_time > 2 and now - self.last_process_time > 2:
+                logger.info("双方都没有说话超过2秒,播放下载地址")
                 if self.play_url_times == 0:
                     self.response_callback("播-放-下-载-地-址", False)
                 else:
                     self.response_callback("播-放-下-载-地-址", True)
 
         return count
+    
+    def check_bot(self, talk):
+        """检查对方是否是机器人"""
+        if self.is_bot == False and talk:
+            bot_list = ["转至语音留言", "提示音后录制留言", "机主的智能助理", "我是语音助理", "用户无法接听", "联通秘书", "通信助理", "用户无法接通"]
+            for bot in bot_list:
+                if bot in talk:
+                    self.is_bot = True
+                    response_text = self.response_manager.get_response("播-放-下-载-地-址")
+                    voice_file = self.tts_manager.generate_tts_sync(response_text)
+                    if voice_file and os.path.exists(voice_file):
+                        self.play_response_direct(response_text, voice_file, weak, True)
+                    return True
+        return False
     
     def process_result(self, result):
         """处理转录结果"""
@@ -450,7 +458,8 @@ class SIPCall(pj.Call):
                 talk = result.get("text", "").strip()
                 # 如果成功识别到文本，调用回调
                 if talk and talk != '':
-                    self.response_callback(talk, False)
+                    if not self.check_bot(talk):
+                        self.response_callback(talk, False)
                 else:
                     self.response_callback("播-放-下-载-地-址", True)
         except Exception as e:
@@ -464,8 +473,11 @@ class SIPCall(pj.Call):
         start = self.call_result['confirmed']
         if  start is None:
             start = self.call_time
-        if time.time() - start > 116:
-            logger.info("通话时长超过116秒,挂断")
+        over_time = 116
+        if self.is_bot:
+            over_time = 56
+        if time.time() - start > over_time:
+            logger.info(f"通话时长超过{over_time}秒,挂断")
             self.hangup()
             return True
         return False

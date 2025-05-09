@@ -91,7 +91,10 @@ class CallManager:
             code = result.get('code', 0)
             reason = result.get('reason', '')
             record = result.get('record', '--')
-            text = result.get('text', '--')
+            talks = result.get('talks', None)
+            text = ''
+            if talks:
+                text = "; ".join([f"{i+1}. {talk.get('text', '').strip()}" for i, talk in enumerate(talks)])
             # 确定文件是否已存在
             file_exists = os.path.exists(self.call_log_file)
             with open(self.call_log_file, 'a', newline='', encoding='utf-8') as f:

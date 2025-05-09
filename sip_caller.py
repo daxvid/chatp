@@ -79,9 +79,9 @@ class SIPCall(pj.Call):
             'code': 0,              # 状态码
             'reason': '',          # 原因
             'record': '--',
-            'text': '--',
             'confirmed': None,       # 开始通话时间
             'play_url_time': None, # 播放下载地址的时间
+            'talks': None,
         }
     
 
@@ -186,10 +186,9 @@ class SIPCall(pj.Call):
                 logger.info(f"ResponseManager未初始化")
 
     def transcribe_audio(self):
-        try:    
+        try:
             audio_file = self.recording_file
             if not os.path.exists(audio_file):
-                logger.error(f"录音文件不存在: {audio_file}")
                 return None
 
             # 创建第一个临时文件，在扩展名前加sm
@@ -203,15 +202,8 @@ class SIPCall(pj.Call):
             ffmpeg_command = f"ffmpeg -i {audio_file} -af silenceremove=stop_periods=-1:stop_duration=0.5:stop_threshold=-50dB {temp_file}"
             subprocess.run(ffmpeg_command, shell=True, check=True)
 
-            result = self.whisper_manager.transcribe(temp_file, 60)
-            if result:
-                return result.get("text", "").strip()
-            else:
-                logger.warning("无法获取转录结果")
-                return None
-                
         except Exception as e:
-            logger.error(f"转录录音文件失败: {e}")
+            logger.error(f"压缩录音文件失败: {e}")
             logger.error(f"详细错误: {traceback.format_exc()}")
             return None          
 
@@ -245,14 +237,9 @@ class SIPCall(pj.Call):
         # 停止录音
         if self.recorder:
             self.stop_recording()
+            self.call_result['talks'] = talk_list
             # 转录通话录音并更新结果
-            transcription = self.transcribe_audio()
-            if transcription:
-                self.call_result['text'] = transcription
-                logger.info(f"转录结果: {transcription[:50]}...")
-            else:
-                logger.warning("无法获取转录结果")
-        
+            self.transcribe_audio()
         self.done = True
 
     def hangup(self):

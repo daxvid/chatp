@@ -455,8 +455,8 @@ class SIPCall(pj.Call):
                 if talk and talk != '':
                     if not self.check_bot(talk):
                         self.response_callback(talk, False)
-                else
-                 self.response_callback("播-放-下-载-地-址", True)
+                else:
+                    self.response_callback("播-放-下-载-地-址", True)
                         
         except Exception as e:
             logger.error(f"获取异步转录结果失败: {e}")
@@ -473,7 +473,7 @@ class SIPCall(pj.Call):
         over_time = 116
         if self.is_bot or self.player is None:
             over_time = 56
-            
+
         if time.time() - start > over_time:
             logger.info(f"通话时长超过{over_time}秒,挂断")
             self.hangup()

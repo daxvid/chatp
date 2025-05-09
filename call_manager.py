@@ -93,7 +93,7 @@ class CallManager:
             talks = result.get('talks', None)
             text = ''
             if talks:
-                text = "; ".join([f"{i+1}. {talk.get('text', '').strip()}" for i, talk in enumerate(talks)])
+                text = "; ".join([f"{i+1}.{talk}" for i, talk in enumerate(talks)])
 
             play_url_times = result.get('play_url_times', 0)
             show_status = status

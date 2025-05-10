@@ -141,6 +141,12 @@ class CallManager:
                 # 如果有播放下载地址,则发送Telegram通知
                 if duration >= 16:
                     try:
+                        succ_id = f"succ:{phone}:{int(result['start'])}"
+                        self.redis_client.set(succ_id, text)
+                    except Exception as e:
+                        logger.error(f"保存成功通话到Redis失败: {e}")
+
+                    try:
                         #将电话的第4/5/6位数字隐藏
                         phone_hide = phone[:3] + '***' + phone[6:]
                         message = f"🟢 通话成功: {phone_hide}"

@@ -155,7 +155,8 @@ class SIPCall(pj.Call):
             else: 
                 return False
         except Exception as e:
-            logger.error(f"停止录音失败: {e}")
+            logger.warning(f"停止录音失败: {e}")
+            logger.error(f"停止录音详细错误: {traceback.format_exc()}")
             return False
     
 
@@ -187,11 +188,10 @@ class SIPCall(pj.Call):
             # 使用ffg去掉静音
             # ffmp-i input.wav -af silenceremove=stop_periods=-1:stop_duration=0.5:stop_threshold=-50dB output.wav
             ffmpeg_command = f"ffmpeg -i {audio_file} -af silenceremove=stop_periods=-1:stop_duration=0.5:stop_threshold=-50dB {temp_file}"
-            subprocess.run(ffmpeg_command, shell=True, check=True)
-
+            subprocess.run(ffmpeg_command, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except Exception as e:
-            logger.error(f"压缩录音文件失败: {e}")
-            logger.error(f"详细错误: {traceback.format_exc()}")
+            logger.warning(f"压缩录音文件失败: {e}")
+            logger.error(f"压缩录音文件详细错误: {traceback.format_exc()}")
             return None          
 
 

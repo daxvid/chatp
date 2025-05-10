@@ -638,22 +638,13 @@ class SIPCaller:
             fail_count = 0
             cache_count = 0
 
-            voices=[
+            voices = self.sip_config.get('voices', [
                 'zh-CN-XiaoxiaoNeural',                
-                'zh-CN-XiaoyiNeural',                    
-                #'zh-CN-YunjianNeural',                   
-                #'zh-CN-YunxiNeural',                   
-                #'zh-CN-YunxiaNeural',                  
-                #'zh-CN-YunyangNeural',                 
+                'zh-CN-XiaoyiNeural',             
                 'zh-CN-liaoning-XiaobeiNeural',         
-                'zh-CN-shaanxi-XiaoniNeural',           
-                #'zh-HK-HiuGaaiNeural',                  
-                #'zh-HK-HiuMaanNeural',                   
-                #'zh-HK-WanLungNeural',                   
-                'zh-TW-HsiaoChenNeural',                 
-                #'zh-TW-YunJheNeural',                    
-                #'zh-TW-HsiaoYuNeural',   
-            ]
+                'zh-CN-shaanxi-XiaoniNeural',            
+                'zh-TW-HsiaoChenNeural', 
+            ])
             
             # 生成所有回复的语音文件
             for response_text in all_responses:

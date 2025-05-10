@@ -113,6 +113,21 @@ Edge TTS支持多种语言和声音，以下是部分中文语音：
 - zh-CN-liaoning-XiaobeiNeural (辽宁口音)
 - zh-CN-shaanxi-XiaoniNeural (陕西口音)
 
+ 'zh-CN-XiaoxiaoNeural',                
+ 'zh-CN-XiaoyiNeural',                    
+ 'zh-CN-YunjianNeural',                   
+ 'zh-CN-YunxiNeural',                   
+ 'zh-CN-YunxiaNeural',                  
+ 'zh-CN-YunyangNeural',                 
+ 'zh-CN-liaoning-XiaobeiNeural',         
+ 'zh-CN-shaanxi-XiaoniNeural',           
+ 'zh-HK-HiuGaaiNeural',                  
+ 'zh-HK-HiuMaanNeural',                   
+ 'zh-HK-WanLungNeural',                   
+ 'zh-TW-HsiaoChenNeural',                 
+ 'zh-TW-YunJheNeural',                    
+ 'zh-TW-HsiaoYuNeural', 
+
 ## 注意事项
 
 - 使用前请确保你有合法的SIP账户

@@ -155,8 +155,8 @@ class SIPCall(pj.Call):
             else: 
                 return False
         except Exception as e:
-            logger.warning(f"停止录音失败: {e}")
-            logger.error(f"停止录音详细错误: {traceback.format_exc()}")
+            if self.recording_file and self.recorder:
+                logger.info(f"录音已停止: {self.recording_file}_{e}")
             return False
     
 
@@ -185,8 +185,8 @@ class SIPCall(pj.Call):
             temp_file = f"{base_name}{timestamp}.sm{ext}"
             if os.path.exists(temp_file):
                 os.remove(temp_file)
-            # 使用ffg去掉静音
-            # ffmp-i input.wav -af silenceremove=stop_periods=-1:stop_duration=0.5:stop_threshold=-50dB output.wav
+            # 使用ffmpeg去掉静音
+            # ffmpeg-i input.wav -af silenceremove=stop_periods=-1:stop_duration=0.5:stop_threshold=-50dB output.wav
             ffmpeg_command = f"ffmpeg -i {audio_file} -af silenceremove=stop_periods=-1:stop_duration=0.5:stop_threshold=-50dB {temp_file}"
             subprocess.run(ffmpeg_command, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except Exception as e:

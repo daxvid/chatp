@@ -40,6 +40,10 @@ class ConfigManager:
     def get_auto_caller_file(self):
         """获取呼叫日志文件"""
         return self.config.get('call', {}).get('auto_caller_file', 'log/auto_caller.log')
+
+    def get_interval(self):
+        """获取呼叫间隔时间"""
+        return self.config.get('call', {}).get('interval', 3)
         
     def get_telegram_config(self):
         """获取Telegram配置"""

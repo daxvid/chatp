@@ -240,7 +240,7 @@ def process_phone_list(call_list, call_manager, whisper_manager, config):
     logger.info(f"共 {len(call_list)} 个号码需要处理")
     sip_config = config.get_sip_config()
     whitelist_ips = config.get_whitelist_ips()
-    interval = sip_config.get('call_interval', 2)
+    interval = config.get_interval()
     working_hours = sip_config.get('working_hours', {
         'enabled': True,
         'start': '12:00',

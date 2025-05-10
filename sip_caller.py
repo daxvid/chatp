@@ -637,21 +637,38 @@ class SIPCaller:
             success_count = 0
             fail_count = 0
             cache_count = 0
+
+            voices=[
+                'zh-CN-XiaoxiaoNeural',                
+                'zh-CN-XiaoyiNeural',                    
+                #'zh-CN-YunjianNeural',                   
+                #'zh-CN-YunxiNeural',                   
+                #'zh-CN-YunxiaNeural',                  
+                #'zh-CN-YunyangNeural',                 
+                'zh-CN-liaoning-XiaobeiNeural',         
+                'zh-CN-shaanxi-XiaoniNeural',           
+                #'zh-HK-HiuGaaiNeural',                  
+                #'zh-HK-HiuMaanNeural',                   
+                #'zh-HK-WanLungNeural',                   
+                'zh-TW-HsiaoChenNeural',                 
+                #'zh-TW-YunJheNeural',                    
+                #'zh-TW-HsiaoYuNeural',   
+            ]
             
             # 生成所有回复的语音文件
             for response_text in all_responses:
                 try:
-                    # 使用TTSManager生成语音
-                    voice_file = self.tts_manager.generate_tts_sync(response_text)
-                    
-                    if voice_file:
-                        if hasattr(self.tts_manager, 'is_from_cache') and self.tts_manager.is_from_cache(response_text):
-                            cache_count += 1
+                    for voice in voices:
+                        # 使用TTSManager生成语音
+                        voice_file = self.tts_manager.generate_tts_sync(response_text, voice)
+                        if voice_file:
+                            if hasattr(self.tts_manager, 'is_from_cache') and self.tts_manager.is_from_cache(response_text):
+                                cache_count += 1
+                            else:
+                                success_count += 1
                         else:
-                            success_count += 1
-                    else:
-                        logger.warning(f"生成TTS文件失败: {response_text[:30]}...")
-                        fail_count += 1
+                            logger.warning(f"生成TTS文件失败: {response_text[:30]}...")
+                            fail_count += 1
                 except Exception as e:
                     logger.error(f"生成TTS文件时出错: {e}")
                     fail_count += 1

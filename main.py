@@ -132,7 +132,7 @@ def initialize_services():
     try:
         # 初始化TTS引擎
         logger.info("初始化TTS引擎...")
-        tts_manager = TTSManager()
+        tts_manager = TTSManager(config.get_tts_cache_dir(), config.get_voice())
         
         # 初始化Whisper转录
         logger.info("初始化Whisper转录...")
@@ -344,6 +344,8 @@ def main():
                 called_numbers = []
                 for row in csv_reader:
                     if str(row[5]) in ['488', '404', '503']:
+                        continue
+                    if str(row[3]).startswith('错误') and str(row[5])!='200':
                         continue
                     called_numbers.append(row[0])
                 # 从call_list中删除已经拨打过的电话号码

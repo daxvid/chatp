@@ -10,7 +10,7 @@ from datetime import datetime
 logger = logging.getLogger("tts")
 
 class TTSManager:
-    def __init__(self, cache_dir="tts_cache"):
+    def __init__(self, cache_dir="tts_cache", voice="zh-CN-XiaoxiaoNeural"):
         """文本转语音管理器"""
         self.cache_dir = cache_dir
         os.makedirs(self.cache_dir, exist_ok=True)
@@ -21,20 +21,27 @@ class TTSManager:
         self.newly_generated = set()
         # 用于跟踪最近生成/使用的文件及其状态
         self.recent_files = {}
+        self.voice = voice
         
-    def get_cache_path(self, text, voice="zh-CN-XiaoxiaoNeural"):
+    def get_cache_path(self, text, voice=None):
         """获取缓存文件路径"""
+        if voice is None:
+            voice = self.voice
         text_hash = hashlib.md5(text.encode()).hexdigest()
         return os.path.join(self.cache_dir, f"{text_hash}_{voice}.wav")
         
-    def is_from_cache(self, text, voice="zh-CN-XiaoxiaoNeural"):
+    def is_from_cache(self, text, voice=None):
         """检查是否从缓存加载"""
+        if voice is None:
+            voice = self.voice
         cache_path = self.get_cache_path(text, voice)
         # 如果路径在缓存命中集合中，或者不在新生成集合中但文件存在
         return (cache_path in self.cache_hits) or (cache_path not in self.newly_generated and os.path.exists(cache_path))
             
-    async def generate_tts(self, text, voice="zh-CN-XiaoxiaoNeural"):
+    async def generate_tts(self, text, voice=None):
         """使用edge-tts直接生成WAV语音文件"""
+        if voice is None:
+            voice = self.voice
         try:
             # 获取缓存文件路径
             wav_path = self.get_cache_path(text, voice)
@@ -105,8 +112,10 @@ class TTSManager:
             logger.error(f"详细错误: {traceback.format_exc()}")
             return None
             
-    def generate_tts_sync(self, text, voice="zh-CN-XiaoxiaoNeural"):
+    def generate_tts_sync(self, text, voice=None):
         """同步版本的TTS生成函数"""
+        if voice is None:
+            voice = self.voice
         try:
             return asyncio.run(self.generate_tts(text, voice))
         except Exception as e:

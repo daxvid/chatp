@@ -53,7 +53,7 @@ class WhisperManager:
             
             # 将任务写入Redis队列
             logger.info(f"提交转录任务 {task_id}: {audio_file}")
-            self.redis_client.rpush("whisper_tasks", json.dumps(task_data))
+            self.redis_client.rpush("whisper_tasks", json.dumps(task_data, ensure_ascii=False))
             
             # 等待结果
             start_time = time.time()

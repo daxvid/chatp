@@ -147,7 +147,7 @@ class WhisperTranscriptionWorker:
                         "success": True,
                         "text": result["text"],
                         "segments": result.get("segments", [])
-                    })
+                    }, ensure_ascii=False)
                 )
             else:
                 self.redis_client.setex (
@@ -156,7 +156,7 @@ class WhisperTranscriptionWorker:
                     json.dumps({
                         "success": False,
                         "error": "Transcription failed"
-                    })
+                    }, ensure_ascii=False)
                 )
             
             logger.info(f"文件 {audio_file} 处理完成")
@@ -170,7 +170,7 @@ class WhisperTranscriptionWorker:
                 json.dumps({
                     "success": False,
                     "error": str(e)
-                })
+                }, ensure_ascii=False)
             )
     
     def run(self):

@@ -1,0 +1,6 @@
+sudo -s
+0 23 * * * /sbin/shutdown -h now
+@reboot /home/user/chatp/vpn_check.sh
+
+user
+@reboot /home/user/chatp/start.sh

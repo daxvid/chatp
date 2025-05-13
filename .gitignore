@@ -15,3 +15,5 @@ conf/response.yaml
 *.wav
 *.yaml
 /conf
+*.log
+/log

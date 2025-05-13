@@ -76,8 +76,11 @@ class TTSManager:
                     'ffmpeg', '-y', 
                     '-i', temp_audio, 
                     '-acodec', 'pcm_s16le', 
-                    '-ar', '16000', 
+                    '-ar', '8000',  # 改为8000Hz，与PJSIP配置匹配
                     '-ac', '1', 
+                    '-f', 'wav',    # 明确指定WAV格式
+                    '-fflags', '+bitexact',  # 确保精确的比特流
+                    '-flags', '+bitexact',   # 确保精确的比特流
                     wav_path
                 ]
                 

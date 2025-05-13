@@ -343,7 +343,7 @@ def main():
                 next(csv_reader)  # 跳过表头
                 called_numbers = []
                 for row in csv_reader:
-                    if str(row[5]) in ['488', '404', '503']:
+                    if str(row[5]) in ['488', '404', '503', '500']:
                         continue
                     if str(row[3]).startswith('错误') and str(row[5])!='200':
                         continue

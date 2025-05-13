@@ -273,7 +273,26 @@ class SIPCall(pj.Call):
         except Exception as e:
             logger.error(f"处理呼叫状态变化时出错: {e}")
             logger.error(f"详细错误: {traceback.format_exc()}")
-         
+
+    def play_complete(self, audio_media, player, response_text, leave):
+        try:    
+            player.stopTransmit(audio_media)
+        except Exception as e:
+            logger.warning(f"停止播放失败2: {e}")
+            
+        if self.player == player:
+            logger.info(f"结束播放语音: {response_text}")
+            self.play_over_time = time.time()
+            self.player = None
+            if self.done == False:
+                if "点vip" in response_text or "点tv" in response_text or "点cc" in response_text:
+                    self.play_url_times += 1
+                    self.call_result['play_url_times'] = self.play_url_times
+                    if self.play_url_times >= 5:
+                        self.hangup()
+        if leave:
+            self.hangup()
+
     def play_response_direct(self, response_text, voice_file, can_pass=False, leave=False):
         """播放响应音频到通话对方"""
         try:
@@ -297,10 +316,16 @@ class SIPCall(pj.Call):
             if self.done:
                 return False
 
+            # 获取通话媒体
+            audio_media = self.audio_media
+            if not audio_media:
+                logger.warning("无法获取音频媒体，播放失败")
+                return False
+
             # 停止当前播放
             if self.player:
                 try:
-                    self.player.stopTransmit(self.audio_media)
+                    self.player.stopTransmit(audio_media)
                 except Exception as e:
                     logger.warning(f"停止播放失败1: {e}")
                 self.play_over_time = time.time()
@@ -308,50 +333,30 @@ class SIPCall(pj.Call):
 
             # 尝试立即播放，如果可能的话
             try:
-                # 获取通话媒体
-                audio_media = self.audio_media
-                if audio_media:
-                    is_play_url = "点vip" in response_text or "点tv" in response_text or "点cc" in response_text
-                    # 创建自定义音频播放器
-                    player = CustomAudioMediaPlayer()
-                    # 使用PJMEDIA_FILE_NO_LOOP标志创建播放器
-                    player.createPlayer(voice_file, pj.PJMEDIA_FILE_NO_LOOP)
-            
-                    # 注册播放完成回调
-                    def on_playback_complete():
-                        try:    
-                            player.stopTransmit(audio_media)
-                        except Exception as e:
-                            logger.warning(f"停止播放失败2: {e}")
-                        if self.player == player:
-                            logger.info(f"结束播放语音: {response_text}")
-                            self.play_over_time = time.time()
-                            self.player = None
-                            if is_play_url and self.done == False:
-                                self.play_url_times += 1
-                                self.call_result['play_url_times'] = self.play_url_times
-                                if self.play_url_times >= 5:
-                                    self.hangup()
-                            if leave:
-                                self.hangup()
-
-                    player.setEofCallback(on_playback_complete)
-                    # 播放到通话媒体
-                    player.startTransmit(audio_media)
-                    self.player = player
-                    logger.info(f"开始播放语音: {response_text}")
-                    return True
-                else:
-                    logger.warning("无法获取音频媒体，播放失败")
-                    return False
+                # 创建自定义音频播放器
+                player = CustomAudioMediaPlayer()
+                # 使用PJMEDIA_FILE_NO_LOOP标志创建播放器
+                player.createPlayer(voice_file, pj.PJMEDIA_FILE_NO_LOOP)
+                # 注册播放完成回调
+                def on_playback_complete():
+                    self.play_complete(audio_media, player, response_text, leave)
+                player.setEofCallback(on_playback_complete)
+                # 播放到通话媒体
+                player.startTransmit(audio_media)
+                self.player = player
+                logger.info(f"开始播放语音: {response_text}")
+                return True
             except Exception as e:
                 logger.warning(f"播放语音失败: {e}")
                 logger.error(f"播放语音失败，详细错误: {traceback.format_exc()}")
+                self.call_result["play_error"] = True
+                self.hangup()
                 return False
                 
         except Exception as e:
             logger.error(f"播放响应过程中出错: {e}")
             logger.error(f"详细错误: {traceback.format_exc()}")
+            self.hangup()
             return False
 
     def is_active(self):
@@ -397,7 +402,7 @@ class SIPCall(pj.Call):
                 return 0
             
             talking = False
-            print(f"时长:{len(audio)/1000}秒, 共:{len(chunks)} 段, 已处理{self.chunks_size},文件:{temp_file}")
+            # print(f"时长:{len(audio)/1000}秒, 共:{len(chunks)} 段, 已处理{self.chunks_size},文件:{temp_file}")
             for i in range(chunks_size, len(chunks)):
                 chunk = chunks[i]
                 # 如果最后一段小于800ms,则表示话没说完,不保存分段

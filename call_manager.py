@@ -96,9 +96,12 @@ class CallManager:
                 text = "; ".join([f"{i+1}.{talk}" for i, talk in enumerate(talks)])
 
             play_url_times = result.get('play_url_times', 0)
+            play_error = result.get('play_error', False)
             show_status = status
             if  duration >= 16:
                 show_status = '成功'
+            elif play_url_times == 0 and play_error:
+                show_status = '播放失败'
 
             # 确定文件是否已存在
             file_exists = os.path.exists(self.call_log_file)
@@ -158,6 +161,12 @@ class CallManager:
                         logger.error(f"发送TG消息失败: {e}")
 
             logger.info(f"呼叫结果已保存到: {self.call_log_file}")
+
+            # 如果播放失败，下次拨号等待300秒
+            if play_error:
+                logger.info(f"播放失败，下次拨号等待300秒")
+                time.sleep(300)
+
             return True
         except Exception as e:
             logger.error(f"保存呼叫结果失败: {e}")

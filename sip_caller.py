@@ -233,6 +233,12 @@ class SIPCall(pj.Call):
         """挂断当前通话"""
         if self.done:
             return
+        if self.player and self.audio_media:
+            try:
+                self.player.stopTransmit(self.audio_media)
+            except Exception as e:
+                logger.warning(f"停止播放失败3: {e}")
+            self.player = None
         try:
             super().hangup(pj.CallOpParam())
         except Exception as e:

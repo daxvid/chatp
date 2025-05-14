@@ -1,5 +1,5 @@
 
-LOG_FILE="/home/user/chatp/start.log"  # 可选日志文件
+LOG_FILE="/home/user/chatp/sip_start.log"  # 可选日志文件
 cd /home/user/chatp
 # 监控进程并自动重启
 while true; do

@@ -274,7 +274,11 @@ def process_phone_list(call_list, call_manager, whisper_manager, config):
         # 拨打电话并等待通话完成
         result = call_manager.make_call(phone)
         call_manager.save_call_result(result)
+        play_error = result.get('play_error', False)
+        if play_error:
+            return False
         time.sleep(interval)
+    return True
 
 
 def cleanup_resources():
@@ -355,10 +359,12 @@ def main():
                 logger.info(f"已拨打过{len(called_numbers)}个号码")
             
         # 处理电话列表
-        process_phone_list(call_list, call_manager, whisper_manager, config)
-            
-        logger.info("所有呼叫处理完成")
-        return 0
+        if process_phone_list(call_list, call_manager, whisper_manager, config):
+            logger.info("所有呼叫处理完成")
+            return 0
+        else:
+            logger.info("检测到播放失败，进程退出")
+            return 1
         
     except Exception as e:
         logger.error(f"程序运行出错: {e}")

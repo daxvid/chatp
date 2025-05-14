@@ -163,12 +163,6 @@ class CallManager:
                         logger.error(f"发送TG消息失败: {e}")
 
             logger.info(f"呼叫结果已保存到: {self.call_log_file}")
-
-            # 如果播放失败，下次拨号等待300秒
-            if play_error:
-                logger.info(f"播放失败，下次拨号等待300秒")
-                time.sleep(300)
-
             return True
         except Exception as e:
             logger.error(f"保存呼叫结果失败: {e}")

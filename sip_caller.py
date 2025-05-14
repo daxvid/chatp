@@ -331,28 +331,31 @@ class SIPCall(pj.Call):
                 self.play_over_time = time.time()
                 self.player = None
 
-            # 尝试立即播放，如果可能的话
-            try:
-                # 创建自定义音频播放器
-                player = CustomAudioMediaPlayer()
-                # 使用PJMEDIA_FILE_NO_LOOP标志创建播放器
-                player.createPlayer(voice_file, pj.PJMEDIA_FILE_NO_LOOP)
-                # 注册播放完成回调
-                def on_playback_complete():
-                    self.play_complete(audio_media, player, response_text, leave)
-                player.setEofCallback(on_playback_complete)
-                # 播放到通话媒体
-                player.startTransmit(audio_media)
-                self.player = player
-                logger.info(f"开始播放语音: {response_text}")
-                return True
-            except Exception as e:
-                logger.warning(f"播放语音失败: {e}")
-                logger.error(f"播放语音失败，详细错误: {traceback.format_exc()}")
-                self.call_result["play_error"] = True
-                self.hangup()
-                return False
-                
+            # 尝试10次播放
+            for i in range(10):
+                # 尝试立即播放，如果可能的话
+                try:
+                    # 创建自定义音频播放器
+                    player = CustomAudioMediaPlayer()
+                    # 使用PJMEDIA_FILE_NO_LOOP标志创建播放器
+                    player.createPlayer(voice_file, pj.PJMEDIA_FILE_NO_LOOP)
+                    # 注册播放完成回调
+                    def on_playback_complete():
+                        self.play_complete(audio_media, player, response_text, leave)
+                    player.setEofCallback(on_playback_complete)
+                    # 播放到通话媒体
+                    player.startTransmit(audio_media)
+                    self.player = player
+                    logger.info(f"开始播放语音: {response_text}")
+                    return True
+                except Exception as e:
+                    if i==9:
+                        logger.warning(f"播放语音失败: {e}")
+                        logger.error(f"播放语音失败，详细错误: {traceback.format_exc()}")
+                        self.call_result["play_error"] = True
+                        self.hangup()
+                        return False
+                    time.sleep(1)
         except Exception as e:
             logger.error(f"播放响应过程中出错: {e}")
             logger.error(f"详细错误: {traceback.format_exc()}")

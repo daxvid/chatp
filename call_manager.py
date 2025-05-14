@@ -103,6 +103,8 @@ class CallManager:
             elif play_url_times == 0 and play_error:
                 show_status = '播放失败'
 
+            day = datetime.fromtimestamp(result['start']).strftime("%y%m%d")
+
             # 确定文件是否已存在
             file_exists = os.path.exists(self.call_log_file)
             with open(self.call_log_file, 'a', newline='', encoding='utf-8') as f:
@@ -116,7 +118,7 @@ class CallManager:
             # 如果通话成功接通，将结果保存到Redis并发送Telegram通知
             if  status == '接通':
                 # 生成唯一的通话记录ID
-                call_id = f"call:{phone}:{int(result['start'])}"
+                call_id = f"call:{day}:{phone}:{int(result['start'])}"
                 confirmed = result.get('confirmed', None)
                 try:
                     # 准备要保存的数据
@@ -136,7 +138,7 @@ class CallManager:
                         call_data['confirmed'] = datetime.fromtimestamp(confirmed).strftime("%Y-%m-%d %H:%M:%S")
                     
                     # 保存到Redis
-                    self.redis_client.set(call_id, json.dumps(call_data, ensure_ascii=False))
+                    self.redis_client.setex(call_id, 3600*24*99, json.dumps(call_data, ensure_ascii=False))
                     logger.info(f"通话已保存到Redis: {call_id}")
                 except Exception as e:
                     logger.error(f"保存通话到Redis失败: {e}")

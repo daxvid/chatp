@@ -221,6 +221,7 @@ class SIPCall(pj.Call):
             duration = (self.call_result['end'] - self.call_result['confirmed'])
             self.call_result['duration'] = duration #f"{duration:.1f}秒"
         
+        self.stop_player(3)
         # 停止录音
         if self.recorder:
             self.stop_recording()
@@ -229,16 +230,20 @@ class SIPCall(pj.Call):
             self.transcribe_audio()
         self.done = True
 
-    def hangup(self):
-        """挂断当前通话"""
-        if self.done:
-            return
+    def stop_player(self, i):
+        """停止播放"""
         if self.player and self.audio_media:
             try:
                 self.player.stopTransmit(self.audio_media)
             except Exception as e:
-                logger.warning(f"停止播放失败3: {e}")
+                logger.warning(f"停止播放失败{i}: {e}")
             self.player = None
+
+    def hangup(self):
+        """挂断当前通话"""
+        if self.done:
+            return
+        self.stop_player(4)
         try:
             super().hangup(pj.CallOpParam())
         except Exception as e:

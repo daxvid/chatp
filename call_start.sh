@@ -1,22 +1,10 @@
 cd /home/user/chatp
 sleep 3
-nohup python3 main.py ./conf/config981.yaml > 981.log 2>&1 &
-sleep 3
-nohup python3 main.py ./conf/config982.yaml > 982.log 2>&1 &
-sleep 3
-nohup python3 main.py ./conf/config983.yaml > 983.log 2>&1 &
-sleep 3
-nohup python3 main.py ./conf/config984.yaml > 984.log 2>&1 &
-sleep 3
-nohup python3 main.py ./conf/config985.yaml > 985.log 2>&1 &
-sleep 3
-nohup python3 main.py ./conf/config158.yaml > 158.log 2>&1 &
-sleep 3
-nohup python3 main.py ./conf/config200.yaml > 200.log 2>&1 &
-sleep 3
-nohup python3 main.py ./conf/config288.yaml > 288.log 2>&1 &
-sleep 3
-nohup python3 main.py ./conf/config388.yaml > 388.log 2>&1 &
-
-
-# sudo nohup /usr/sbin/openvpn --suppress-timestamps --nobind --config /etc/openvpn/client/a.conf > vpn.log 2>&1 &
+# 检查所有 main.py 进程
+for config in 981 982 983 984 985 986 987 988 989 990 991 992 993 994 158 159 160 161 162 163 164 165 166 167 168 169 200 201 202 288 289 290 388; do
+    if ! pgrep -f "python3 main.py ./conf/config${config}.yaml" > /dev/null; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') config${config}.yaml 正在启动..." >> "$LOG_FILE"
+            nohup python3 main.py ./conf/config${config}.yaml > ${config}.log 2>&1 &
+            sleep 3
+    fi
+done

@@ -71,6 +71,9 @@ class CallManager:
             with open(file_path, 'r', encoding='utf-8') as f:
                 # 读取每行，去除空白字符
                 self.call_list = [line.strip() for line in f if line.strip()]
+
+            # 如果不是纯数字, 则从列表中删除
+            self.call_list = [phone for phone in self.call_list if phone.isdigit()]
                 
             logger.info(f"成功加载电话号码列表，共{len(self.call_list)}个号码")
             return True

@@ -139,7 +139,9 @@ class CallManager:
                     }
                     if confirmed:
                         call_data['confirmed'] = datetime.fromtimestamp(confirmed).strftime("%Y-%m-%d %H:%M:%S")
-                    
+                    if duration >= 16:
+                        call_id = f"succ:{day}:{phone}:{int(result['start'])}"
+                        
                     # 保存到Redis
                     self.redis_client.setex(call_id, 3600*24*99, json.dumps(call_data, ensure_ascii=False))
                     logger.info(f"通话已保存到Redis: {call_id}")
@@ -148,12 +150,6 @@ class CallManager:
 
                 # 如果有播放下载地址,则发送Telegram通知
                 if duration >= 16:
-                    try:
-                        succ_id = f"succ:{phone}:{int(result['start'])}"
-                        self.redis_client.set(succ_id, text)
-                    except Exception as e:
-                        logger.error(f"保存成功通话到Redis失败: {e}")
-
                     try:
                         #将电话的第4/5/6位数字隐藏
                         phone_hide = phone[:3] + '***' + phone[6:]

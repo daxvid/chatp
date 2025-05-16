@@ -360,9 +360,9 @@ def main():
 
         reg_file = "./conf/reg.txt"
         if os.path.exists(reg_file):
-            with open(reg_success_file, 'r', encoding='utf-8') as f:
+            with open(reg_file, 'r', encoding='utf-8') as f:
                 reg_numbers = [line.strip() for line in f if line.strip()]
-                # 从call_list中删除已经注册成功的电话号码
+                # 从call_list中删除已经注册的电话号码
                 call_list = [number for number in call_list if number not in reg_numbers]
                 logger.info(f"已注册{len(reg_numbers)}个号码")
 

@@ -357,7 +357,15 @@ def main():
                 # 从call_list中删除已经拨打过的电话号码
                 call_list = [number for number in call_list if number not in called_numbers]
                 logger.info(f"已拨打过{len(called_numbers)}个号码")
-            
+
+        reg_file = "./conf/reg.txt"
+        if os.path.exists(reg_file):
+            with open(reg_success_file, 'r', encoding='utf-8') as f:
+                reg_numbers = [line.strip() for line in f if line.strip()]
+                # 从call_list中删除已经注册成功的电话号码
+                call_list = [number for number in call_list if number not in reg_numbers]
+                logger.info(f"已注册{len(reg_numbers)}个号码")
+
         # 处理电话列表
         if process_phone_list(call_list, call_manager, whisper_manager, config):
             logger.info("所有呼叫处理完成")

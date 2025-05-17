@@ -112,33 +112,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "例如：/查手机13344445555"
     )
 
-async def delete_webhook(token: str):
-    """删除webhook设置"""
-    try:
-        async with aiohttp.ClientSession() as session:
-            url = f"https://api.telegram.org/bot{token}/deleteWebhook"
-            async with session.get(url) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    if result.get('ok'):
-                        logger.info("成功删除webhook")
-                    else:
-                        logger.error(f"删除webhook失败: {result.get('description')}")
-                else:
-                    logger.error(f"删除webhook请求失败: HTTP {response.status}")
-    except Exception as e:
-        logger.error(f"删除webhook时出错: {e}")
-        raise
-
 def main():
     """主函数"""
     try:
         # 创建应用
         application = Application.builder().token(config['telegram']['bot_token']).build()
-        
-        # 删除webhook
-        import asyncio
-        asyncio.run(delete_webhook(config['telegram']['bot_token']))
         
         # 添加命令处理器
         application.add_handler(CommandHandler("start", start))

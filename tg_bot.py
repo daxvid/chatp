@@ -130,25 +130,43 @@ async def delete_webhook(token: str):
         logger.error(f"删除webhook时出错: {e}")
         raise
 
-def main():
-    """主函数"""
+async def async_main():
+    """异步主函数"""
     try:
         # 创建应用
         application = Application.builder().token(config['telegram']['bot_token']).build()
         
         # 删除webhook
-        import asyncio
-        asyncio.run(delete_webhook(config['telegram']['bot_token']))
+        await delete_webhook(config['telegram']['bot_token'])
         
         # 添加命令处理器
         application.add_handler(CommandHandler("start", start))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_phone_query))
         
         # 启动机器人
-        application.run_polling()
+        await application.initialize()
+        await application.start()
+        await application.run_polling()
         
     except Exception as e:
         logger.error(f"机器人运行出错: {e}")
+    finally:
+        await application.stop()
+
+def main():
+    """主函数入口"""
+    import asyncio
+    try:
+        # 在Windows上需要使用这个策略
+        if os.name == 'nt':
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        
+        # 运行异步主函数
+        asyncio.run(async_main())
+    except KeyboardInterrupt:
+        logger.info("程序被用户中断")
+    except Exception as e:
+        logger.error(f"程序运行出错: {e}")
 
 if __name__ == '__main__':
     main() 

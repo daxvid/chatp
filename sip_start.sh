@@ -11,6 +11,13 @@ while true; do
         sleep 30
     fi
 
+    # 检查 tg_bot.py 进程
+    if ! pgrep -f "python3 tg_bot.py" > /dev/null; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') tg_bot.py 正在启动..." >> "$LOG_FILE"
+        nohup python3 tg_bot.py > 001.log 2>&1 &
+        sleep 30
+    fi
+
     # 检查所有 main.py 进程
     for config in 969 970 971 972 973 974 975 976 977 978 979 980 981 982 983 984 985 986 987 988 989 990 991 992 993 994 995 996 997 998 999 158 159 160 161 162 163 164 165 166 167 168 169 200 201 202 288 289 290 388; do
         if ! pgrep -f "python3 main.py ./conf/config${config}.yaml" > /dev/null; then

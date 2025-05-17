@@ -205,7 +205,7 @@ class SIPCall(pj.Call):
             self.audio_media = self.getAudioMedia(-1)
             self.start_recording()
             # 等待1秒,开始播放第一条语音
-            time.sleep(1)
+            time.sleep(0.2)
             self.response_callback("播-放-开-场-欢-迎-语", False)
 
 
@@ -495,7 +495,7 @@ class SIPCall(pj.Call):
         if  start is None:
             start = self.call_time
 
-        over_time = 116
+        over_time = 56
         if self.is_bot or self.player is None:
             over_time = 56
 

@@ -1,7 +1,7 @@
 import os
 import logging
-import pyodbc
 import yaml
+import aiohttp
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
@@ -23,6 +23,26 @@ logging.basicConfig(
     filename=config['logging']['filename']
 )
 logger = logging.getLogger(__name__)
+
+async def query_phone(phone: str) -> str:
+    """通过HTTP API查询手机号信息"""
+    try:
+        api_config = config['api']
+        url = f"{api_config['base_url']}{api_config['endpoint']}?n={phone}"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=api_config['timeout']) as response:
+                if response.status == 200:
+                    return await response.text()
+                else:
+                    logger.error(f"API请求失败: HTTP {response.status}")
+                    raise Exception(f"API请求失败: HTTP {response.status}")
+    except aiohttp.ClientError as e:
+        logger.error(f"API请求出错: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"查询失败: {e}")
+        raise
 
 def is_authorized(chat_id: int, user_id: int) -> bool:
     """检查用户是否在指定群组的白名单中"""
@@ -47,45 +67,6 @@ async def check_authorization(update: Update) -> bool:
         return False
     return True
 
-def get_db_connection():
-    """创建数据库连接"""
-    try:
-        db_config = config['database']
-        conn_str = (
-            f"DRIVER={db_config['driver']};"
-            f"SERVER={db_config['server']};"
-            f"DATABASE={db_config['database']};"
-            f"UID={db_config['uid']};"
-            f"PWD={db_config['pwd']};"
-            f"Trusted_Connection={db_config['trusted_connection']};"
-        )
-        return pyodbc.connect(conn_str)
-    except Exception as e:
-        logger.error(f"数据库连接失败: {e}")
-        raise
-
-def query_phone(phone):
-    """查询手机号信息"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # MS SQL Server存储过程调用方式
-        # 使用 EXEC 或 EXECUTE 关键字
-        cursor.execute("EXEC select_phone @phone=?", (phone,))
-        
-        # 获取所有结果
-        results = cursor.fetchall()
-        
-        # 关闭连接
-        cursor.close()
-        conn.close()
-        
-        return results
-    except Exception as e:
-        logger.error(f"查询失败: {e}")
-        raise
-
 async def handle_phone_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理手机号查询命令"""
     try:
@@ -108,25 +89,10 @@ async def handle_phone_query(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await update.message.reply_text("请输入正确的11位手机号码！")
             return
         
-        # 查询数据库
-        results = query_phone(phone)
+        # 查询API
+        response = await query_phone(phone)
         
-        # 处理查询结果
-        if not results:
-            await update.message.reply_text(f"未找到手机号 {phone} 的相关记录")
-            return
-        
-        # 构建CSV格式的回复消息
-        # 添加表头
-        response = "电话\t总充值\t总提现\n"
-        
-        # 添加数据行
-        for row in results:
-            phone_num, total_recharge, total_withdraw = row
-            # 使用制表符分隔每个字段
-            response += f"{phone_num}\t{total_recharge}\t{total_withdraw}\n"
-        
-        # 发送回复
+        # 直接返回API响应
         await update.message.reply_text(response)
         
     except Exception as e:

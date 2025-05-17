@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 配置参数
-TARGET_IP="119.12.161.38"            # 替换为你的目标 IP
+TARGET_IP="23.235.171.202"            # 替换为你的目标 IP
 CHECK_INTERVAL=3               # 检查间隔（秒）
 OVPN_PROCESS="/usr/sbin/openvpn"
 LOG_FILE="/var/log/ovpn_watchdog.log"  # 可选日志文件

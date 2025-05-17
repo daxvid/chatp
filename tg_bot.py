@@ -146,12 +146,17 @@ async def async_main():
         # 启动机器人
         await application.initialize()
         await application.start()
-        await application.run_polling()
+        
+        # 开始轮询，这会阻塞直到程序被停止
+        logger.info("开始轮询消息...")
+        await application.run_polling(allowed_updates=Update.ALL_TYPES)
         
     except Exception as e:
         logger.error(f"机器人运行出错: {e}")
     finally:
-        await application.stop()
+        # 确保应用被正确停止
+        if application.running:
+            await application.stop()
 
 def main():
     """主函数入口"""

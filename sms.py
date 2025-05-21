@@ -139,6 +139,30 @@ class SMSClient:
             logger.error(f"发送短信时出错: {e}")
             raise
 
+    def send_sms_sync(
+        self,
+        phone_numbers: Union[str, List[str]],
+        content: str = "",
+        schedule_time: Optional[str] = None,
+        serial_number: Optional[str] = None
+    ) -> Dict[str, str]:
+        """同步版本的短信发送函数
+        
+        Args:
+            phone_numbers: 手机号码，可以是单个号码字符串或号码列表
+            content: 短信内容，如果为空则使用配置中的默认内容
+            schedule_time: 预约发送时间，格式：yyyyMMddhhmmss
+            serial_number: 流水号，20位数字
+
+        Returns:
+            Dict[str, str]: 包含 result, description, taskid 的响应字典
+
+        Raises:
+            SMSError: 发送失败时抛出异常
+        """
+        import asyncio
+        return asyncio.run(self.send_sms(phone_numbers, content, schedule_time, serial_number))
+
 async def send_sms(
     phone_numbers: Union[str, List[str]],
     content: str,
@@ -163,6 +187,37 @@ async def send_sms(
     """
     client = SMSClient(config_path)
     return await client.send_sms(phone_numbers, content, schedule_time, serial_number)
+
+def send_sms_sync(
+    phone_numbers: Union[str, List[str]],
+    content: str = "",
+    schedule_time: Optional[str] = None,
+    serial_number: Optional[str] = None,
+    config_path: str = 'conf/config.yaml'
+) -> Dict[str, str]:
+    """同步版本的便捷短信发送函数
+    
+    Args:
+        phone_numbers: 手机号码，可以是单个号码字符串或号码列表
+        content: 短信内容，如果为空则使用配置中的默认内容
+        schedule_time: 预约发送时间，格式：yyyyMMddhhmmss
+        serial_number: 流水号，20位数字
+        config_path: 配置文件路径
+
+    Returns:
+        Dict[str, str]: 包含 result, description, taskid 的响应字典
+
+    Raises:
+        SMSError: 发送失败时抛出异常
+    """
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        client = SMSClient(config['sms'])
+        return client.send_sms_sync(phone_numbers, content, schedule_time, serial_number)
+    except Exception as e:
+        logger.error(f"发送短信时出错: {e}")
+        raise
 
 # 使用示例
 if __name__ == '__main__':

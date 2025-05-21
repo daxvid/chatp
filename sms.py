@@ -119,15 +119,34 @@ class SMSClient:
                     if response.status != 200:
                         raise SMSError("20", f"HTTP请求失败: {response.status}")
                     
-                    result = await response.json()
+                    # 获取响应内容
+                    text = await response.text()
+                    
+                    # 尝试解析响应
+                    try:
+                        # 首先尝试解析为JSON
+                        result = await response.json()
+                    except:
+                        # 如果不是JSON，尝试解析为URL编码格式
+                        try:
+                            from urllib.parse import parse_qs
+                            result_dict = parse_qs(text)
+                            result = {k: v[0] for k, v in result_dict.items()}
+                        except:
+                            # 如果都失败了，创建一个基本的结果字典
+                            result = {
+                                'result': '0' if '发送成功' in text else '20',
+                                'description': text,
+                                'taskid': ''
+                            }
                     
                     # 检查发送结果
-                    if result['result'] != "0":
+                    if result.get('result') != "0":
                         error_msg = self.ERROR_CODES.get(
-                            result['result'],
-                            f"未知错误: {result['description']}"
+                            result.get('result', '20'),
+                            f"未知错误: {result.get('description', text)}"
                         )
-                        raise SMSError(result['result'], error_msg)
+                        raise SMSError(result.get('result', '20'), error_msg)
                     
                     logger.info(f"短信发送成功: {result}")
                     return result

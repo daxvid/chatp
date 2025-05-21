@@ -60,3 +60,8 @@ class ConfigManager:
     def get_tts_cache_dir(self):
         """获取TTS缓存目录"""
         return self.config.get('call', {}).get('tts_cache_dir', 'tts_cache')
+
+    def get_sms_config(self):
+        """获取短信配置"""
+        return self.config.get('sms', {})
+    

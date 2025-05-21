@@ -1,0 +1,66 @@
+2.1.2 发送短信
+功能描述： 短信发送
+
+调用格式A：
+
+请求方式:
+
+POST http://ip:port/sms/Api/Send.do
+响应示例:
+
+result=&description=错误描述&faillist=失败号码列表
+调用格式B:
+
+请求方式:
+
+POST http://ip:port/sms/Api/ReturnJson/Send.do
+响应示例:
+
+{"result":"0","description":"发送成功,需要人工审核", "taskid":"190319105738200000"}
+请按form表单格式发起请求，http头为:application/x-www-form-urlencoded
+
+HTTP请求参数
+
+参数名称	类型	是否必填**	说明
+SpCode	string	是	企业编号
+LoginName	string	是	用户名称
+Password	string	是	用户密码
+MessageContent	string	是	短信内容,最大700个字符
+UserNumber	string	是	手机号码(多个号码用","分隔)，最多1000个号码
+SerialNumber	string	否	流水号，20位数字，唯一
+ScheduleTime	string	否	预约发送时间，格式:yyyyMMddhhmmss,如'20090901010101'，立即发送请填空
+subPort	string	否	可选，扩展号
+GET http://ip:port/sms/Api/Send.do?SpCode=200097&LoginName=admin&Password=admin&MessageContent=短信内容&UserNumber=1330000000&SerialNumber=&ScheduleTime=&subPort= 
+建议采用post方式
+
+返回状态码：
+
+返回值	错误描述
+0	发送短信成功
+1	提交参数不能为空
+2	账号无效或未开户
+3	账号密码错误,
+4	预约发送时间无效
+5	IP不合法,
+6	号码中含有无效号码或不在规定的号段,
+7	内容中含有非法关键字,
+8	内容长度超过上限，最大4000
+9	接受号码过多，最大5000
+10	黑名单用户
+11	提交速度太快
+12	您尚未订购[普通短信业务]，暂不能发送该类信息
+13	您的[普通短信业务]剩余数量发送不足，暂不能发送该类信息
+14	流水号格式不正确
+15	流水号重复
+16	超出发送上限（操作员帐户当日发送上限）
+17	余额不足
+18	扣费不成功
+20	系统错误
+21	您只能发送联通的手机号码，本次发送的手机号码中包含了非联通的手机号码
+22	您只能发送移动的手机号码，本次发送的手机号码中包含了非移动的手机号码
+23	您只能发送电信的手机号码，本次发送的手机号码中包含了非电信的手机号码
+24	账户状态不正常
+25	账户权限不足
+26	需要人工审核
+28	发送内容与模板不符
+实际返回内容为"result=0&description=发送成功&taskid=180828100924138386"

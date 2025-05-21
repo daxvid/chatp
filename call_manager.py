@@ -14,7 +14,7 @@ import pjsua2 as pj
 logger = logging.getLogger("call_manager")
 
 class CallManager:
-    def __init__(self, sip_caller, tts_manager, whisper_manager, call_log_file, exit_event, telegram_config, redis_host="localhost", redis_port=6379):
+    def __init__(self, sip_caller, tts_manager, whisper_manager, call_log_file, exit_event, telegram_config, sms_client, redis_host="localhost", redis_port=6379):
         """呼叫管理器"""
         self.sip_caller = sip_caller
         self.tts_manager = tts_manager
@@ -24,6 +24,7 @@ class CallManager:
         self.call_list = []
         self.call_results = []
         self.current_index = 0
+        self.sms_client = sms_client
         
         # 初始化Redis连接
         self.redis_client = redis.Redis(
@@ -72,8 +73,8 @@ class CallManager:
                 # 读取每行，去除空白字符
                 self.call_list = [line.strip() for line in f if line.strip()]
 
-            # 如果不是纯数字, 则从列表中删除
-            self.call_list = [phone for phone in self.call_list if phone.isdigit()]
+            # 长度小于11的号码, 则从列表中删除
+            self.call_list = [phone for phone in self.call_list if len(phone) >= 11]
                 
             logger.info(f"成功加载电话号码列表，共{len(self.call_list)}个号码")
             return True
@@ -160,6 +161,13 @@ class CallManager:
                             logger.error(f"发送TG消息失败: {message}")
                     except Exception as e:
                         logger.error(f"发送TG消息失败: {e}")
+
+                    # 发送短信通知
+                    if self.sms_client:
+                        try:
+                            await self.sms_client.send_sms(phone, "")
+                        except Exception as e:
+                            logger.error(f"发送短信失败: {e}")  
 
             logger.info(f"呼叫结果已保存到: {self.call_log_file}")
             return True

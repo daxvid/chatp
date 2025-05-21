@@ -23,6 +23,7 @@ from tts_manager import TTSManager
 from whisper_manager import WhisperManager
 from sip_caller import SIPCaller
 from call_manager import CallManager
+from sms import SMSClient
 
 # 禁用全局SSL证书验证
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -159,11 +160,18 @@ def initialize_services():
             logger.error("SIP客户端初始化不完整，无法进行呼叫")
             return None
 
+        # 初始化短信客户端
+        sms_config = config.get_sms_config()
+        if sms_config.get('enabled', False):
+            sms_client = SMSClient(sms_config)
+        else:
+            sms_client = None
+
         # 初始化呼叫管理器
         logger.info("初始化呼叫管理器...")
         call_log_file = config.get_call_log_file()
         telegram_config = config.get_telegram_config()
-        call_manager = CallManager(sip_caller, tts_manager, whisper_manager, call_log_file, exit_event, telegram_config)
+        call_manager = CallManager(sip_caller, tts_manager, whisper_manager, call_log_file, exit_event, telegram_config, sms_client)
         
         # 存储服务实例以便全局访问
         services = {

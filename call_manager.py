@@ -165,7 +165,7 @@ class CallManager:
                     # 发送短信通知
                     if self.sms_client:
                         try:
-                            self.sms_client.send_sms_sync(phone, "")
+                            self.sms_client.send_sms(phone, "")
                         except Exception as e:
                             logger.error(f"发送短信失败: {e}")  
 

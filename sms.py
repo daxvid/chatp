@@ -1,6 +1,6 @@
 import logging
 import yaml
-import aiohttp
+import requests
 from typing import List, Optional, Dict, Union
 from urllib.parse import urlencode
 
@@ -55,10 +55,10 @@ class SMSClient:
         """
         self.sms_config = sms_config
 
-    async def send_sms(
+    def send_sms(
         self,
         phone_numbers: Union[str, List[str]],
-        content: str,
+        content: str = "",
         schedule_time: Optional[str] = None,
         serial_number: Optional[str] = None
     ) -> Dict[str, str]:
@@ -66,7 +66,7 @@ class SMSClient:
         
         Args:
             phone_numbers: 手机号码，可以是单个号码字符串或号码列表
-            content: 短信内容
+            content: 短信内容，如果为空则使用配置中的默认内容
             schedule_time: 预约发送时间，格式：yyyyMMddhhmmss
             serial_number: 流水号，20位数字
 
@@ -109,112 +109,62 @@ class SMSClient:
             if self.sms_config.get('sub_port'):
                 params['subPort'] = self.sms_config['sub_port']
 
-            # 发送请求
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self.sms_config['api_url'],
-                    data=params,
-                    headers={'Content-Type': 'application/x-www-form-urlencoded'}
-                ) as response:
-                    if response.status != 200:
-                        raise SMSError("20", f"HTTP请求失败: {response.status}")
-                    
-                    # 获取响应内容
-                    text = await response.text()
-                    
-                    # 尝试解析响应
-                    try:
-                        # 首先尝试解析为JSON
-                        result = await response.json()
-                    except:
-                        # 如果不是JSON，尝试解析为URL编码格式
-                        try:
-                            from urllib.parse import parse_qs
-                            result_dict = parse_qs(text)
-                            result = {k: v[0] for k, v in result_dict.items()}
-                        except:
-                            # 如果都失败了，创建一个基本的结果字典
-                            result = {
-                                'result': '0' if '发送成功' in text else '20',
-                                'description': text,
-                                'taskid': ''
-                            }
-                    
-                    # 检查发送结果
-                    if result.get('result') != "0":
-                        error_msg = self.ERROR_CODES.get(
-                            result.get('result', '20'),
-                            f"未知错误: {result.get('description', text)}"
-                        )
-                        raise SMSError(result.get('result', '20'), error_msg)
-                    
-                    logger.info(f"短信发送成功: {result}")
-                    return result
+            # 构建GET请求URL
+            url = f"{self.sms_config['api_url']}?{urlencode(params)}"
+            
+            # 发送GET请求
+            response = requests.get(url, timeout=10)
+            
+            if response.status_code != 200:
+                raise SMSError("20", f"HTTP请求失败: {response.status_code}")
+            
+            # 获取响应内容
+            text = response.text
+            
+            # 尝试解析响应
+            try:
+                # 首先尝试解析为JSON
+                result = response.json()
+            except:
+                # 如果不是JSON，尝试解析为URL编码格式
+                try:
+                    from urllib.parse import parse_qs
+                    result_dict = parse_qs(text)
+                    result = {k: v[0] for k, v in result_dict.items()}
+                except:
+                    # 如果都失败了，创建一个基本的结果字典
+                    result = {
+                        'result': '0' if '发送成功' in text else '20',
+                        'description': text,
+                        'taskid': ''
+                    }
+            
+            # 检查发送结果
+            if result.get('result') != "0":
+                error_msg = self.ERROR_CODES.get(
+                    result.get('result', '20'),
+                    f"未知错误: {result.get('description', text)}"
+                )
+                raise SMSError(result.get('result', '20'), error_msg)
+            
+            logger.info(f"短信发送成功: {result}")
+            return result
 
-        except aiohttp.ClientError as e:
+        except requests.RequestException as e:
             logger.error(f"发送短信请求失败: {e}")
             raise SMSError("20", f"网络请求错误: {str(e)}")
         except Exception as e:
             logger.error(f"发送短信时出错: {e}")
             raise
 
-    def send_sms_sync(
-        self,
-        phone_numbers: Union[str, List[str]],
-        content: str = "",
-        schedule_time: Optional[str] = None,
-        serial_number: Optional[str] = None
-    ) -> Dict[str, str]:
-        """同步版本的短信发送函数
-        
-        Args:
-            phone_numbers: 手机号码，可以是单个号码字符串或号码列表
-            content: 短信内容，如果为空则使用配置中的默认内容
-            schedule_time: 预约发送时间，格式：yyyyMMddhhmmss
-            serial_number: 流水号，20位数字
-
-        Returns:
-            Dict[str, str]: 包含 result, description, taskid 的响应字典
-
-        Raises:
-            SMSError: 发送失败时抛出异常
-        """
-        import asyncio
-        return asyncio.run(self.send_sms(phone_numbers, content, schedule_time, serial_number))
-
-async def send_sms(
-    phone_numbers: Union[str, List[str]],
-    content: str,
-    schedule_time: Optional[str] = None,
-    serial_number: Optional[str] = None,
-    config_path: str = 'conf/config.yaml'
-) -> Dict[str, str]:
-    """便捷的短信发送函数
-    
-    Args:
-        phone_numbers: 手机号码，可以是单个号码字符串或号码列表
-        content: 短信内容
-        schedule_time: 预约发送时间，格式：yyyyMMddhhmmss
-        serial_number: 流水号，20位数字
-        config_path: 配置文件路径
-
-    Returns:
-        Dict[str, str]: 包含 result, description, taskid 的响应字典
-
-    Raises:
-        SMSError: 发送失败时抛出异常
-    """
-    client = SMSClient(config_path)
-    return await client.send_sms(phone_numbers, content, schedule_time, serial_number)
-
-def send_sms_sync(
+def send_sms(
     phone_numbers: Union[str, List[str]],
     content: str = "",
     schedule_time: Optional[str] = None,
     serial_number: Optional[str] = None,
     config_path: str = 'conf/config.yaml'
 ) -> Dict[str, str]:
-    """同步版本的便捷短信发送函数
+    """便捷的短信发送函数
     
     Args:
         phone_numbers: 手机号码，可以是单个号码字符串或号码列表
@@ -233,34 +183,29 @@ def send_sms_sync(
         with open(config_path, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
         client = SMSClient(config['sms'])
-        return client.send_sms_sync(phone_numbers, content, schedule_time, serial_number)
+        return client.send_sms(phone_numbers, content, schedule_time, serial_number)
     except Exception as e:
         logger.error(f"发送短信时出错: {e}")
         raise
 
 # 使用示例
 if __name__ == '__main__':
-    import asyncio
-    
-    async def test_send():
-        try:
-            # 发送单个号码
-            result = await send_sms(
-                "13300000000",
-                "测试短信内容"
-            )
-            print(f"发送结果: {result}")
-            
-            # 发送多个号码
-            result = await send_sms(
-                ["13300000000", "13800000000"],
-                "测试群发短信"
-            )
-            print(f"群发结果: {result}")
-            
-        except SMSError as e:
-            print(f"发送失败: {e}")
-        except Exception as e:
-            print(f"发生错误: {e}")
-    
-    asyncio.run(test_send()) 
+    try:
+        # 发送单个号码
+        result = send_sms(
+            "13300000000",
+            "测试短信内容"
+        )
+        print(f"发送结果: {result}")
+        
+        # 发送多个号码
+        result = send_sms(
+            ["13300000000", "13800000000"],
+            "测试群发短信"
+        )
+        print(f"群发结果: {result}")
+        
+    except SMSError as e:
+        print(f"发送失败: {e}")
+    except Exception as e:
+        print(f"发生错误: {e}") 

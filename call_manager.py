@@ -118,6 +118,8 @@ class CallManager:
                     writer.writerow(['电话号码', '开始时间', '结束时间', '呼叫状态', '接通时长', '状态码', '原因', '录音文件', '转录结果'])
                 # 写入所有结果
                 writer.writerow([phone, start, end, show_status, duration, code, reason, record, text])
+                # 写入硬盘
+                f.flush()
             
             # 如果通话成功接通，将结果保存到Redis并发送Telegram通知
             if  status == '接通':

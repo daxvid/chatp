@@ -556,6 +556,36 @@ class SIPCaller:
             # 初始化PJSIP库
             self.ep.libInit(ep_cfg)
             
+            # 配置编解码器
+            codec_config = self.sip_config.get('codec', {})
+            if codec_config.get('enabled', True):  # 默认启用编解码器优先级调整
+                codec_mgr = self.ep.codecEnum()
+                for codec in codec_mgr:
+                    # 禁用所有编解码器
+                    self.ep.codecSetPriority(codec.codecId, 0)
+                
+                # 获取优先级配置
+                priorities = codec_config.get('priorities', {})
+                g729_priority = priorities.get('g729', 255)
+                pcma_priority = priorities.get('pcma', 254)
+                pcmu_priority = priorities.get('pcmu', 253)
+                
+                # 启用G.729编解码器并设置优先级
+                g729_id = pj.PJMEDIA_RTP_PT_G729
+                self.ep.codecSetPriority(g729_id, g729_priority)
+                
+                # 启用PCMA作为第二优先级编解码器
+                pcma_id = pj.PJMEDIA_RTP_PT_PCMA
+                self.ep.codecSetPriority(pcma_id, pcma_priority)
+                
+                # 启用PCMU作为第三优先级编解码器
+                pcmu_id = pj.PJMEDIA_RTP_PT_PCMU
+                self.ep.codecSetPriority(pcmu_id, pcmu_priority)
+                
+                logger.info(f"已配置编解码器优先级: G.729={g729_priority}, PCMA={pcma_priority}, PCMU={pcmu_priority}")
+            else:
+                logger.info("编解码器优先级调整已禁用")
+            
             # 创建UDP传输
             transport_cfg = pj.TransportConfig()
             transport_cfg.port = 0  # 使用随机端口
@@ -659,9 +689,7 @@ class SIPCaller:
 
             voices = self.sip_config.get('voices', [
                 'zh-CN-XiaoxiaoNeural',                
-                'zh-CN-XiaoyiNeural',             
-                'zh-CN-liaoning-XiaobeiNeural',         
-                'zh-CN-shaanxi-XiaoniNeural',            
+                'zh-CN-XiaoyiNeural',                 
                 'zh-TW-HsiaoChenNeural', 
             ])
             

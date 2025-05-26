@@ -559,7 +559,7 @@ class SIPCaller:
             # 配置编解码器
             codec_config = self.sip_config.get('codec', {})
             if codec_config.get('enabled', True):  # 默认启用编解码器优先级调整
-                codec_mgr = self.ep.codecEnum()
+                codec_mgr = self.ep.codecEnum2()  # 使用新的codecEnum2方法
                 for codec in codec_mgr:
                     # 禁用所有编解码器
                     self.ep.codecSetPriority(codec.codecId, 0)

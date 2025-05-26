@@ -570,17 +570,14 @@ class SIPCaller:
                 pcma_priority = priorities.get('pcma', 254)
                 pcmu_priority = priorities.get('pcmu', 253)
                 
-                # 启用G.729编解码器并设置优先级
-                g729_id = pj.PJMEDIA_RTP_PT_G729
-                self.ep.codecSetPriority(g729_id, g729_priority)
-                
-                # 启用PCMA作为第二优先级编解码器
-                pcma_id = pj.PJMEDIA_RTP_PT_PCMA
-                self.ep.codecSetPriority(pcma_id, pcma_priority)
-                
-                # 启用PCMU作为第三优先级编解码器
-                pcmu_id = pj.PJMEDIA_RTP_PT_PCMU
-                self.ep.codecSetPriority(pcmu_id, pcmu_priority)
+                # 使用编解码器ID而不是RTP负载类型
+                for codec in codec_mgr:
+                    if codec.codecId.name == "G729":
+                        self.ep.codecSetPriority(codec.codecId, g729_priority)
+                    elif codec.codecId.name == "PCMA":
+                        self.ep.codecSetPriority(codec.codecId, pcma_priority)
+                    elif codec.codecId.name == "PCMU":
+                        self.ep.codecSetPriority(codec.codecId, pcmu_priority)
                 
                 logger.info(f"已配置编解码器优先级: G.729={g729_priority}, PCMA={pcma_priority}, PCMU={pcmu_priority}")
             else:

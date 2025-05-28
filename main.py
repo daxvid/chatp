@@ -359,7 +359,7 @@ def main():
                         continue
                     if str(row[3]).startswith('错误') and str(row[5])!='200':
                         continue
-                    if str(row[3]).startswith('播放失败'):
+                    if str(row[3]).startswith('播放失败') and int(row[4]) < 20:
                         continue
                     called_numbers.append(row[0])
                 # 从call_list中删除已经拨打过的电话号码

@@ -262,7 +262,7 @@ def process_phone_list(call_list, call_manager, whisper_manager, config):
         # 检查是否请求退出
         if exit_event.is_set():
             logger.info("检测到退出请求，停止拨号")
-            break
+            return False
 
         if not is_working_hours(working_hours):
             # 当前不是工作时段，等待拨打
@@ -284,6 +284,7 @@ def process_phone_list(call_list, call_manager, whisper_manager, config):
         call_manager.save_call_result(result)
         play_error = result.get('play_error', False)
         if play_error:
+            logger.info("检测到播放失败，停止拨号")
             return False
         time.sleep(interval)
     return True
@@ -343,7 +344,8 @@ def main():
         whisper_manager = services['whisper_manager']
             
         # 准备呼叫列表
-        call_list = prepare_call_list(call_manager, config.get_call_list_file())
+        call_list_file = config.get_call_list_file()
+        call_list = prepare_call_list(call_manager, call_list_file)
         if not call_list:
             logger.error("呼叫列表为空或加载失败，程序退出")
             return 1
@@ -377,9 +379,9 @@ def main():
         # 处理电话列表
         if process_phone_list(call_list, call_manager, whisper_manager, config):
             logger.info("所有呼叫处理完成")
+            os.rename(call_list_file, call_list_file + ".over")
             return 0
         else:
-            logger.info("检测到播放失败，进程退出")
             return 1
         
     except Exception as e:

@@ -19,7 +19,7 @@ while true; do
     fi
 
     # 检查所有 main.py 进程
-    for config in 967 968 969 970 971 972 973 974 975 976 977 978 979 980 981 982 983 984 985 986 987 988 989 990 991 992 993 994 995 996 997 998 999 158 159 160 161 162 163 164 165 166 167 168 169 200 201 202 288 290; do
+    for config in 158 159 160 161 162 200 288 967 968 969 970 971 972 973 974 975 976 977 978 979 980 981 982 983 984 985 986 987 988 989 990 991 992 993 994 995 996 997 998 999; do
         if ! pgrep -f "python3 main.py ./conf/config${config}.yaml" > /dev/null; then
             # 检查config${config}.yaml是否存在
             if [ ! -f ./conf/config${config}.yaml ]; then
@@ -38,3 +38,15 @@ while true; do
     # 每60秒检查一次
     sleep 60
 done
+
+nohup python3 main.py ./conf/config158.yaml > 158.log 2>&1 &
+nohup python3 main.py ./conf/config200.yaml > 200.log 2>&1 &
+nohup python3 main.py ./conf/config288.yaml > 288.log 2>&1 &
+nohup python3 main.py ./conf/config950.yaml > 950.log 2>&1 &
+nohup python3 main.py ./conf/config951.yaml > 951.log 2>&1 &
+
+使用python,将tel.txt 文件分成多个文件，　原来的文件大概有1000000行，新的文件每30000行一个，
+新的文件保存为　tel950.txt/tel951.txt/tel952.txt/tel953.txt ...   
+
+
+使用python,有一个配置文件config950.yaml, 生成新的配置文件config951.yaml　到config990

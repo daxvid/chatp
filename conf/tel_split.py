@@ -1,5 +1,8 @@
 
-def split_large_file(input_file, lines_per_file=30000, prefix='tel', start_num=950):
+#　使用python,将tel.txt 文件分成多个文件，　原来的文件大概有1000000行，新的文件每30000行一个，
+#　新的文件保存为　tel950.txt/tel951.txt/tel952.txt/tel953.txt ...   
+
+def split_large_file(input_file, lines_per_file=28000, prefix='tel', start_num=950):
     with open(input_file, 'r') as f:
         file_count = start_num
         output_file = None

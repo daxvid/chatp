@@ -1,6 +1,9 @@
 
 import os
 
+# 使用python,有一个配置文件config950.yaml, 生成新的配置文件config951.yaml　到config990 共40个文件
+# 新的配置文件中将所有950替换为951到990,　将“359010”　替换为　“359011”，“359012”，，“359013”
+
 def generate_configs(base_file, count=40, start_num=950):
     with open(base_file, 'r') as f:
         template = f.read()

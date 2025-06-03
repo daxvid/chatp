@@ -30,7 +30,7 @@ while true; do
                 continue
             fi
             echo "$(date '+%Y-%m-%d %H:%M:%S') config${config}.yaml 正在启动..." >> "$LOG_FILE"
-            nohup python3 main.py ./conf/config${config}.yaml > ${config}.log 2>&1 &
+            # nohup python3 main.py ./conf/config${config}.yaml > ${config}.log 2>&1 &
             sleep 3
         fi
     done

@@ -1,7 +1,10 @@
 
 LOG_FILE="/home/user/chatp/sip_start.log"  # 可选日志文件
 cd /home/user/chatp
+#sed -i 's/778778/006006/g' ./conf/config9*.yaml
+#sed -i 's/response98/response098_006/g' ./conf/config9*.yaml
 sleep 20
+
 # 监控进程并自动重启
 while true; do
     # 检查 whisper_main.py 进程
@@ -44,3 +47,4 @@ done
 # nohup python3 main.py ./conf/config200.yaml > 200.log 2>&1 &
 # nohup python3 main.py ./conf/config288.yaml > 288.log 2>&1 &
 # nohup python3 main.py ./conf/config950.yaml > 950.log 2>&1 &
+# nohup python3 main.py ./conf/config999.yaml > 999.log 2>&1 &
